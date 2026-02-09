@@ -18,7 +18,15 @@ class Game {
         this.playerTank = null;
         this.enemyTanks = [];
         this.bullets = [];
-        this.pellets = [];
+        this.bots = [];
+        this.pellets = []; // Keep for now, will be replaced by bots
+        
+        // Bot sprites
+        this.botSprites = {
+            rectangle: null,
+            triangle: null
+        };
+        this.loadBotSprites();
         
         // UI elements
         this.setupUI();
@@ -102,19 +110,60 @@ class Game {
             ));
         }
 
-        // Generate some pellets
-        this.generatePellets(20);
+        // Generate bots (replace pellets)
+        this.generateBots(15); // 15 bots total (mix of rectangles and triangles)
     }
 
-    generatePellets(count) {
-        for (let i = 0; i < count; i++) {
-            this.pellets.push({
-                x: random(50, this.canvas.width - 50),
-                y: random(50, this.canvas.height - 50),
-                size: randomInt(5, 15),
-                color: '#ffd700',
-                xp: 10
+    loadBotSprites() {
+        // Load Rectangle sprite
+        const rectSprite = new Image();
+        rectSprite.src = 'assets/SharpRectangle.png';
+        rectSprite.onload = () => {
+            this.botSprites.rectangle = rectSprite;
+            // Update existing bots
+            this.bots.forEach(bot => {
+                if (bot.type === 'rectangle') {
+                    bot.loadSprite(rectSprite);
+                }
             });
+        };
+
+        // Load Triangle sprite
+        const triSprite = new Image();
+        triSprite.src = 'assets/SharpTriangle.png';
+        triSprite.onload = () => {
+            this.botSprites.triangle = triSprite;
+            // Update existing bots
+            this.bots.forEach(bot => {
+                if (bot.type === 'triangle') {
+                    bot.loadSprite(triSprite);
+                }
+            });
+        };
+    }
+
+    generateBots(count) {
+        this.bots = [];
+        
+        // Ensure canvas has valid dimensions
+        const canvasWidth = Math.max(this.canvas.width || 800, 800);
+        const canvasHeight = Math.max(this.canvas.height || 600, 600);
+        
+        for (let i = 0; i < count; i++) {
+            // Mix of rectangles and triangles (more rectangles than triangles)
+            const type = Math.random() < 0.7 ? 'rectangle' : 'triangle';
+            const bot = new Bot(
+                random(50, canvasWidth - 50),
+                random(50, canvasHeight - 50),
+                type
+            );
+            
+            // Load sprite if available
+            if (this.botSprites[type]) {
+                bot.loadSprite(this.botSprites[type]);
+            }
+            
+            this.bots.push(bot);
         }
     }
 
@@ -150,6 +199,13 @@ class Game {
             tank.update(deltaTime, null, this.canvas.width, this.canvas.height);
         });
 
+        // Update bots
+        this.bots = this.bots.filter(bot => {
+            if (!bot) return false; // Remove null/undefined bots
+            bot.update(deltaTime, this.canvas.width, this.canvas.height);
+            return true; // Keep bot
+        });
+
         // Update bullets
         this.bullets = this.bullets.filter(bullet => {
             bullet.update(deltaTime);
@@ -182,10 +238,52 @@ class Game {
                 }
             }
             
+            // Check collisions with bots
+            for (const bot of this.bots) {
+                if (!bot || bot.isDead) continue;
+                
+                const distance = getDistance(bullet.x, bullet.y, bot.x, bot.y);
+                if (distance < bot.size + bullet.size) {
+                    // Hit bot!
+                    const result = bot.takeDamage(bullet.damage, bullet.ownerId);
+                    bullet.penetration--;
+                    
+                    if (result.killed && result.attackerId && this.playerTank && result.attackerId === this.playerTank.id) {
+                        // Player killed the bot - give XP
+                        this.playerTank.addXP(result.xpReward);
+                    }
+                    
+                    if (bullet.penetration <= 0) {
+                        return false; // Remove bullet
+                    }
+                    break;
+                }
+            }
+            
             return true;
         });
 
-        // Check pellet collisions
+        // Check tank collision with bots (body damage)
+        if (this.playerTank) {
+            for (const bot of this.bots) {
+                if (!bot || bot.isDead) continue;
+                
+                const distance = getDistance(bot.x, bot.y, this.playerTank.x, this.playerTank.y);
+                if (distance < bot.size + this.playerTank.size) {
+                    // Tank touched bot - take body damage
+                    if (this.playerTank) { // Check again in case it became null
+                        const isDead = this.playerTank.takeDamage(bot.bodyDamage);
+                        if (isDead) {
+                            // Player died from bot collision
+                            this.killSelf();
+                            break; // Exit loop since player is dead
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check pellet collisions (keep for now, can remove later)
         if (this.playerTank) {
             this.pellets = this.pellets.filter(pellet => {
                 const distance = getDistance(pellet.x, pellet.y, this.playerTank.x, this.playerTank.y);
@@ -205,7 +303,14 @@ class Game {
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         if (this.state === 'playing') {
-            // Draw pellets
+            // Draw bots
+            this.bots.forEach(bot => {
+                if (bot && !bot.isDead) {
+                    bot.draw(this.ctx);
+                }
+            });
+
+            // Draw pellets (keep for now, can remove later)
             this.pellets.forEach(pellet => {
                 this.ctx.fillStyle = pellet.color;
                 this.ctx.beginPath();
