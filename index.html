@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>U_Diep - Skill-Based PvP Tank Battle</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="gameContainer">
+        <!-- Game Canvas -->
+        <canvas id="gameCanvas"></canvas>
+        
+        <!-- UI Overlay -->
+        <div id="uiOverlay">
+            <!-- HUD -->
+            <div id="hud">
+                <div id="balance">Balance: $100</div>
+                <div id="level">Level: 1</div>
+                <div id="health">Health: 100/100</div>
+                <div id="xp">XP: 0/100</div>
+            </div>
+            
+            <!-- Room Selection (Hidden initially) -->
+            <div id="roomSelection" class="hidden">
+                <h2>Select Room</h2>
+                <button class="room-btn" data-stake="1">$1 Room</button>
+                <button class="room-btn" data-stake="5">$5 Room</button>
+                <button class="room-btn" data-stake="10">$10 Room</button>
+            </div>
+            
+            <!-- Kill Button -->
+            <button id="killButton" class="hidden">Kill Self</button>
+        </div>
+        
+        <!-- Loading Screen -->
+        <div id="loadingScreen">
+            <h1>U_Diep</h1>
+            <p>Loading...</p>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/utils.js"></script>
+    <script src="js/Input.js"></script>
+    <script src="js/Bullet.js"></script>
+    <script src="js/Tank.js"></script>
+    <script src="js/game.js"></script>
+</body>
+</html>

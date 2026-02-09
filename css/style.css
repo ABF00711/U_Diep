@@ -1,0 +1,147 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Arial', sans-serif;
+    background: #1a1a2e;
+    color: #fff;
+    overflow: hidden;
+}
+
+#gameContainer {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#gameCanvas {
+    background: #16213e;
+    border: 2px solid #0f3460;
+    cursor: crosshair;
+}
+
+#uiOverlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 10;
+}
+
+#hud {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 15px;
+    border-radius: 8px;
+    pointer-events: auto;
+}
+
+#hud div {
+    margin: 5px 0;
+    font-size: 14px;
+}
+
+#roomSelection {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.9);
+    padding: 30px;
+    border-radius: 12px;
+    text-align: center;
+    pointer-events: auto;
+    border: 2px solid #4a90e2;
+}
+
+#roomSelection h2 {
+    margin-bottom: 20px;
+    color: #4a90e2;
+}
+
+.room-btn {
+    display: block;
+    width: 200px;
+    padding: 15px;
+    margin: 10px auto;
+    background: #4a90e2;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.room-btn:hover {
+    background: #357abd;
+    transform: scale(1.05);
+}
+
+.room-btn:active {
+    transform: scale(0.95);
+}
+
+#killButton {
+    position: absolute;
+    bottom: 30px;
+    right: 30px;
+    padding: 15px 30px;
+    background: #e24a4a;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: all 0.3s;
+}
+
+#killButton:hover {
+    background: #c0392b;
+    transform: scale(1.05);
+}
+
+#killButton:active {
+    transform: scale(0.95);
+}
+
+#loadingScreen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+}
+
+#loadingScreen.hidden {
+    display: none;
+}
+
+#loadingScreen h1 {
+    font-size: 48px;
+    color: #4a90e2;
+    margin-bottom: 20px;
+}
+
+.hidden {
+    display: none !important;
+}
