@@ -265,14 +265,19 @@ class Game {
 
         // Check tank collision with bots (body damage)
         if (this.playerTank) {
+            const currentTime = Date.now(); // Get current time in milliseconds
+            
             for (const bot of this.bots) {
                 if (!bot || bot.isDead) continue;
                 
                 const distance = getDistance(bot.x, bot.y, this.playerTank.x, this.playerTank.y);
                 if (distance < bot.size + this.playerTank.size) {
-                    // Tank touched bot - take body damage
-                    if (this.playerTank) { // Check again in case it became null
+                    // Tank touched bot - check cooldown before applying damage
+                    if (this.playerTank && bot.canDamagePlayer(this.playerTank.id, currentTime)) {
+                        // Apply body damage (only once per second)
                         const isDead = this.playerTank.takeDamage(bot.bodyDamage);
+                        bot.recordDamageToPlayer(this.playerTank.id, currentTime);
+                        
                         if (isDead) {
                             // Player died from bot collision
                             this.killSelf();

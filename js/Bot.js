@@ -3,8 +3,14 @@
 class Bot {
     // Admin-configurable settings
     static DEFAULT_RESPAWN_TIME = 60000; // 1 minute in milliseconds
+    static DEFAULT_DAMAGE_COOLDOWN = 1000; // 1 second in milliseconds
+    
     static setRespawnTime(seconds) {
         Bot.DEFAULT_RESPAWN_TIME = seconds * 1000; // Convert to milliseconds
+    }
+    
+    static setDamageCooldown(seconds) {
+        Bot.DEFAULT_DAMAGE_COOLDOWN = seconds * 1000; // Convert to milliseconds
     }
     constructor(x, y, type = 'rectangle', options = {}) {
         this.x = x;
@@ -24,7 +30,7 @@ class Bot {
             // Rectangle (weaker)
             this.health = options.health || 75;
             this.maxHealth = options.maxHealth || 75;
-            this.bodyDamage = options.bodyDamage || 8;
+            this.bodyDamage = options.bodyDamage || 2;
             this.size = options.size || 20;
             this.xpReward = 50;
             this.spriteName = 'SharpRectangle'; // Use SharpRectangle.png or RoundedRectangle.png
@@ -47,6 +53,10 @@ class Bot {
         this.deathTime = 0;
         // Respawn time can be configured by admin (default: 1 minute)
         this.respawnTime = options.respawnTime || Bot.DEFAULT_RESPAWN_TIME || 60000; // milliseconds
+        
+        // Damage cooldown - bots can only damage players once per second (admin configurable)
+        this.damageCooldown = options.damageCooldown || Bot.DEFAULT_DAMAGE_COOLDOWN; // milliseconds
+        this.lastDamageTime = {}; // Track last damage time per player (playerId -> timestamp)
     }
 
     update(deltaTime, canvasWidth, canvasHeight) {
@@ -101,6 +111,17 @@ class Bot {
         }
         
         return { killed: false };
+    }
+
+    canDamagePlayer(playerId, currentTime) {
+        // Check if enough time has passed since last damage to this player
+        const lastDamage = this.lastDamageTime[playerId] || 0;
+        return (currentTime - lastDamage) >= this.damageCooldown;
+    }
+
+    recordDamageToPlayer(playerId, currentTime) {
+        // Record that we damaged this player at this time
+        this.lastDamageTime[playerId] = currentTime;
     }
 
     respawn(canvasWidth, canvasHeight) {

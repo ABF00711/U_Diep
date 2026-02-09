@@ -31,8 +31,8 @@ class Tank {
             bulletSpeed: options.bulletSpeed || 0,
             bulletPenetration: options.bulletPenetration || 0,
             bulletDamage: options.bulletDamage || 0,
-            reload: options.reload || 5,
-            movementSpeed: options.movementSpeed || 5,
+            reload: options.reload || 1,
+            movementSpeed: options.movementSpeed || 1,
         };
         
         // Shooting
