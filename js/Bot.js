@@ -91,16 +91,30 @@ class Bot {
             this.directionChangeInterval = changeInterval;
         }
 
-        // Move bot (slow, random movement)
-        this.vx = Math.cos(this.moveDirection) * this.speed;
-        this.vy = Math.sin(this.moveDirection) * this.speed;
+        // Move bot (combine random movement with velocity from collisions)
+        const randomVx = Math.cos(this.moveDirection) * this.speed;
+        const randomVy = Math.sin(this.moveDirection) * this.speed;
         
+        // Combine random movement with collision velocity (squirt effect)
+        // Apply dampening to collision velocity so it gradually slows down
+        this.vx = this.vx * GameConfig.BOT.SQUIRT_DAMPENING + randomVx * (1 - GameConfig.BOT.SQUIRT_DAMPENING);
+        this.vy = this.vy * GameConfig.BOT.SQUIRT_DAMPENING + randomVy * (1 - GameConfig.BOT.SQUIRT_DAMPENING);
+        
+        // Update position with combined velocity
         this.x += this.vx * deltaTime;
         this.y += this.vy * deltaTime;
         
         // Keep bot within bounds
         this.x = clamp(this.x, this.size, canvasWidth - this.size);
         this.y = clamp(this.y, this.size, canvasHeight - this.size);
+        
+        // Reset velocity if bot hits boundary (bounce effect)
+        if (this.x <= this.size || this.x >= canvasWidth - this.size) {
+            this.vx *= -0.5; // Reverse and dampen
+        }
+        if (this.y <= this.size || this.y >= canvasHeight - this.size) {
+            this.vy *= -0.5; // Reverse and dampen
+        }
     }
 
     takeDamage(amount, attackerId) {

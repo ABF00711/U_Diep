@@ -26,7 +26,8 @@ const GameConfig = {
         BODY_DAMAGE_COOLDOWN: 1000,        // milliseconds
         MOVEMENT_SPEED_MULTIPLIER: 0.1,    // Stat multiplier
         RELOAD_MULTIPLIER: 0.1,            // Stat multiplier
-        MAX_STAT_POINTS: 7                 // Maximum points per stat
+        MAX_STAT_POINTS: 7,                // Maximum points per stat
+        COLLISION_PUSH_FORCE: 0.5          // Push-back force multiplier (0-1, higher = stronger push)
     },
 
     // Bullet Settings
@@ -68,7 +69,9 @@ const GameConfig = {
         DEFAULT_DAMAGE_COOLDOWN: 1000,     // 1 second in milliseconds
         DIRECTION_CHANGE_MIN: 2,           // seconds
         DIRECTION_CHANGE_MAX: 5,           // seconds
-        RECTANGLE_SPAWN_CHANCE: 0.7        // 70% chance to spawn rectangle
+        RECTANGLE_SPAWN_CHANCE: 0.7,       // 70% chance to spawn rectangle
+        SQUIRT_FORCE: 150,                 // Force applied when tank pushes pellet (pixels/second)
+        SQUIRT_DAMPENING: 0.95             // Velocity dampening per frame (0-1, lower = more friction)
     },
 
     // Game Settings

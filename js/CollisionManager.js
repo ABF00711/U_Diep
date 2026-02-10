@@ -119,7 +119,7 @@ class CollisionManager {
     }
 
     /**
-     * Check tank collision with bots (mutual body damage)
+     * Check tank collision with bots (mutual body damage + push-back with squirt effect)
      * @param {Tank} tank - Tank to check
      * @param {Array} bots - Array of bots to check against
      */
@@ -133,6 +133,9 @@ class CollisionManager {
             
             const distance = getDistance(bot.x, bot.y, tank.x, tank.y);
             if (distance < bot.size + tank.size) {
+                // Apply push-back with squirt effect first
+                this.applyTankBotPushBack(tank, bot);
+                
                 // Mutual collision - both take body damage
                 
                 // Bot damages tank
@@ -155,6 +158,65 @@ class CollisionManager {
                         tank.addXP(result.xpReward);
                     }
                 }
+            }
+        }
+    }
+    
+    /**
+     * Apply push-back with squirt effect when tank collides with pellet/bot
+     * Pellets get "squirted" away from the tank with velocity
+     * @param {Tank} tank - The tank
+     * @param {Bot} bot - The pellet/bot
+     */
+    applyTankBotPushBack(tank, bot) {
+        // Calculate distance between tank and bot centers
+        const dx = bot.x - tank.x;
+        const dy = bot.y - tank.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        // Avoid division by zero
+        if (distance === 0) {
+            // If bot is exactly on top of tank, separate them randomly
+            const angle = Math.random() * Math.PI * 2;
+            const separation = (tank.size + bot.size) * 0.5;
+            bot.x = tank.x + Math.cos(angle) * separation;
+            bot.y = tank.y + Math.sin(angle) * separation;
+            return;
+        }
+        
+        // Calculate minimum distance (sum of radii)
+        const minDistance = tank.size + bot.size;
+        
+        // If tank and bot are overlapping
+        if (distance < minDistance) {
+            // Calculate overlap amount
+            const overlap = minDistance - distance;
+            
+            // Calculate collision normal (direction from tank to bot)
+            const normalX = dx / distance;
+            const normalY = dy / distance;
+            
+            // Push bot away from tank (position correction)
+            const pushDistance = overlap * 0.6; // Push bot most of the way out
+            bot.x = tank.x + normalX * minDistance;
+            bot.y = tank.y + normalY * minDistance;
+            
+            // Apply "squirt" effect - give bot velocity away from tank
+            const squirtForce = GameConfig.BOT.SQUIRT_FORCE;
+            bot.vx = normalX * squirtForce;
+            bot.vy = normalY * squirtForce;
+            
+            // Also slightly push tank back (much less force)
+            const tankPushBack = overlap * 0.2;
+            tank.x -= normalX * tankPushBack;
+            tank.y -= normalY * tankPushBack;
+            
+            // Clamp tank position to canvas bounds
+            if (this.game && this.game.canvas) {
+                const canvasWidth = this.game.canvas.width || GameConfig.GAME.CANVAS_MIN_WIDTH;
+                const canvasHeight = this.game.canvas.height || GameConfig.GAME.CANVAS_MIN_HEIGHT;
+                tank.x = clamp(tank.x, tank.size, canvasWidth - tank.size);
+                tank.y = clamp(tank.y, tank.size, canvasHeight - tank.size);
             }
         }
     }
@@ -189,6 +251,9 @@ class CollisionManager {
      * @param {number} currentTime - Current timestamp
      */
     processTankCollision(tank1, tank2, currentTime) {
+        // Calculate collision push-back first
+        this.applyTankPushBack(tank1, tank2);
+        
         // Tank1 damages Tank2
         if (tank1.canDamageTarget(tank2.id, currentTime)) {
             const isDead = tank2.takeDamage(tank1.getBodyDamage());
@@ -237,6 +302,90 @@ class CollisionManager {
             
             if (isDead && tank1.isPlayer) {
                 this.deathHandler.handlePlayerDeath('tank_collision');
+            }
+        }
+    }
+    
+    /**
+     * Apply push-back physics when two tanks collide
+     * Prevents tanks from overlapping by pushing them apart
+     * @param {Tank} tank1 - First tank
+     * @param {Tank} tank2 - Second tank
+     */
+    applyTankPushBack(tank1, tank2) {
+        // Calculate distance between tank centers
+        const dx = tank2.x - tank1.x;
+        const dy = tank2.y - tank1.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        // Avoid division by zero
+        if (distance === 0) {
+            // If tanks are exactly on top of each other, separate them randomly
+            const angle = Math.random() * Math.PI * 2;
+            const separation = (tank1.size + tank2.size) * 0.5;
+            tank1.x -= Math.cos(angle) * separation;
+            tank1.y -= Math.sin(angle) * separation;
+            tank2.x += Math.cos(angle) * separation;
+            tank2.y += Math.sin(angle) * separation;
+            return;
+        }
+        
+        // Calculate minimum distance (sum of radii)
+        const minDistance = tank1.size + tank2.size;
+        
+        // If tanks are overlapping
+        if (distance < minDistance) {
+            // Calculate overlap amount
+            const overlap = minDistance - distance;
+            
+            // Calculate collision normal (direction from tank1 to tank2)
+            const normalX = dx / distance;
+            const normalY = dy / distance;
+            
+            // Calculate push-back force (proportional to overlap)
+            const pushForce = overlap * GameConfig.TANK.COLLISION_PUSH_FORCE;
+            
+            // Push tanks apart along the collision normal
+            // Each tank moves proportionally
+            const pushX = normalX * pushForce;
+            const pushY = normalY * pushForce;
+            
+            // Store original positions for bounds checking
+            const oldX1 = tank1.x;
+            const oldY1 = tank1.y;
+            const oldX2 = tank2.x;
+            const oldY2 = tank2.y;
+            
+            // Apply push-back to both tanks (tank1 pushed back, tank2 pushed forward)
+            tank1.x -= pushX;
+            tank1.y -= pushY;
+            tank2.x += pushX;
+            tank2.y += pushY;
+            
+            // Clamp positions to canvas bounds (if canvas dimensions available)
+            if (this.game && this.game.canvas) {
+                const canvasWidth = this.game.canvas.width || GameConfig.GAME.CANVAS_MIN_WIDTH;
+                const canvasHeight = this.game.canvas.height || GameConfig.GAME.CANVAS_MIN_HEIGHT;
+                
+                tank1.x = clamp(tank1.x, tank1.size, canvasWidth - tank1.size);
+                tank1.y = clamp(tank1.y, tank1.size, canvasHeight - tank1.size);
+                tank2.x = clamp(tank2.x, tank2.size, canvasWidth - tank2.size);
+                tank2.y = clamp(tank2.y, tank2.size, canvasHeight - tank2.size);
+            }
+            
+            // Also apply velocity dampening to prevent jittering
+            // Reduce velocity component along collision normal
+            const dot1 = tank1.vx * normalX + tank1.vy * normalY;
+            const dot2 = tank2.vx * normalX + tank2.vy * normalY;
+            
+            // Only dampen if tanks are moving towards each other
+            if (dot1 > 0) {
+                tank1.vx -= normalX * dot1 * 0.5;
+                tank1.vy -= normalY * dot1 * 0.5;
+            }
+            if (dot2 < 0) {
+                tank2.vx -= normalX * dot2 * 0.5;
+                tank2.vy -= normalY * dot2 * 0.5;
             }
         }
     }
