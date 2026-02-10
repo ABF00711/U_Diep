@@ -21,11 +21,12 @@ const GameConfig = {
         DEFAULT_SPEED: 200,
         DEFAULT_HEALTH: 100,
         DEFAULT_MAX_HEALTH: 100,
-        DEFAULT_BODY_DAMAGE: 3,
+        DEFAULT_BODY_DAMAGE: 3,            // Base body damage (added to stat value)
         BASE_RELOAD_TIME: 1000,            // milliseconds
         BODY_DAMAGE_COOLDOWN: 1000,        // milliseconds
         MOVEMENT_SPEED_MULTIPLIER: 0.1,    // Stat multiplier
-        RELOAD_MULTIPLIER: 0.1             // Stat multiplier
+        RELOAD_MULTIPLIER: 0.1,            // Stat multiplier
+        MAX_STAT_POINTS: 7                 // Maximum points per stat
     },
 
     // Bullet Settings

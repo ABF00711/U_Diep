@@ -21,6 +21,7 @@ class Game {
         this.rewardManager = new RewardManager(this.economy);
         this.deathHandler = new DeathHandler(this);
         this.collisionManager = new CollisionManager(this);
+        this.statAllocationUI = new StatAllocationUI(this);
         
         // Game objects
         this.playerTank = null;
@@ -275,6 +276,11 @@ class Game {
     update(deltaTime) {
         if (this.state !== 'playing') return;
 
+        // Check for pending stat allocation (show UI if needed)
+        if (this.playerTank && this.playerTank.hasPendingStatAllocation() && !this.statAllocationUI.isOpen()) {
+            this.statAllocationUI.show();
+        }
+
         // Update player tank
         if (this.playerTank) {
             this.playerTank.update(deltaTime, this.input, this.canvas.width, this.canvas.height);
@@ -393,6 +399,34 @@ class Game {
                 document.getElementById('level').textContent = `Level: ${this.playerTank.level}`;
                 document.getElementById('health').textContent = `Health: ${Math.floor(this.playerTank.health)}/${this.playerTank.maxHealth}`;
                 document.getElementById('xp').textContent = `XP: ${this.playerTank.xp}/${this.playerTank.xpToNextLevel}`;
+                
+                // Show stat points if available
+                const statPoints = this.playerTank.getStatPoints();
+                let statPointsEl = document.getElementById('statPoints');
+                if (statPoints > 0 || this.playerTank.hasPendingStatAllocation()) {
+                    if (!statPointsEl) {
+                        statPointsEl = document.createElement('div');
+                        statPointsEl.id = 'statPoints';
+                        statPointsEl.style.color = '#ffd700';
+                        statPointsEl.style.fontWeight = 'bold';
+                        statPointsEl.style.cursor = 'pointer';
+                        statPointsEl.style.textDecoration = 'underline';
+                        statPointsEl.addEventListener('click', () => {
+                            if (!this.statAllocationUI.isOpen()) {
+                                this.statAllocationUI.show();
+                            }
+                        });
+                        document.getElementById('hud').appendChild(statPointsEl);
+                    }
+                    statPointsEl.textContent = `Stat Points: ${statPoints} (Click to allocate)`;
+                } else if (statPointsEl) {
+                    statPointsEl.textContent = '';
+                }
+                
+                // Update stat allocation UI if it's open
+                if (this.statAllocationUI.isOpen()) {
+                    this.statAllocationUI.updateDisplay();
+                }
             }
             
             // Update balance display

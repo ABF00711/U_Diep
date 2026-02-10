@@ -25,17 +25,28 @@ class Tank {
         this.vx = 0;
         this.vy = 0;
         
-        // Tank stats (diep.io style)
+        // Tank stats (diep.io style) - all start at 0, allocated via stat points
+        // Note: bodyDamage stat starts at 0, but base body damage (3) is added when calculating damage
         this.stats = {
             healthRegen: options.healthRegen || 0,
-            maxHealth: options.maxHealth || GameConfig.TANK.DEFAULT_MAX_HEALTH,
-            bodyDamage: options.bodyDamage || GameConfig.TANK.DEFAULT_BODY_DAMAGE,
+            maxHealth: options.maxHealth || 0,
+            bodyDamage: options.bodyDamage || 0,
             bulletSpeed: options.bulletSpeed || 0,
             bulletPenetration: options.bulletPenetration || 0,
             bulletDamage: options.bulletDamage || 0,
-            reload: options.reload || 1,
-            movementSpeed: options.movementSpeed || 1,
+            reload: options.reload || 0,
+            movementSpeed: options.movementSpeed || 0,
         };
+        
+        // Stat points available for allocation
+        this.statPoints = options.statPoints || 0;
+        
+        // Track if stat allocation UI should be shown
+        this.pendingStatAllocation = false;
+        
+        // Initialize max health (will be updated when maxHealth stat is allocated)
+        // Base health is DEFAULT_MAX_HEALTH, +5 HP per maxHealth stat point
+        this.maxHealth = GameConfig.TANK.DEFAULT_MAX_HEALTH + (this.stats.maxHealth * 5);
         
         // Shooting
         this.lastShotTime = 0;
@@ -134,7 +145,88 @@ class Tank {
     levelUp() {
         this.level++;
         this.xpToNextLevel = Math.floor(this.xpToNextLevel * GameConfig.XP.XP_MULTIPLIER_PER_LEVEL);
-        // TODO: Allow player to allocate stat points
+        
+        // Give stat point on level up (1 point per level)
+        this.statPoints++;
+        this.pendingStatAllocation = true; // Flag to show stat UI
+    }
+    
+    /**
+     * Allocate a stat point to a specific stat
+     * @param {string} statName - Name of the stat to allocate to
+     * @returns {boolean} - True if allocation successful, false if no points available or stat at max
+     */
+    allocateStatPoint(statName) {
+        if (this.statPoints <= 0) {
+            return false; // No points available
+        }
+        
+        if (!this.stats.hasOwnProperty(statName)) {
+            return false; // Invalid stat name
+        }
+        
+        // Check if stat is already at maximum (7)
+        if (this.stats[statName] >= GameConfig.TANK.MAX_STAT_POINTS) {
+            return false; // Stat already at maximum
+        }
+        
+        // Allocate point
+        this.stats[statName]++;
+        this.statPoints--;
+        
+        // Apply stat changes immediately
+        this.applyStatChanges(statName);
+        
+        return true;
+    }
+    
+    /**
+     * Apply stat changes when a stat is allocated
+     * @param {string} statName - Name of the stat that was changed
+     */
+    applyStatChanges(statName) {
+        switch(statName) {
+            case 'maxHealth':
+                // Update max health (+5 HP per point)
+                this.maxHealth = GameConfig.TANK.DEFAULT_MAX_HEALTH + (this.stats.maxHealth * 5);
+                // Heal to new max if current health is at old max
+                if (this.health >= this.maxHealth - 5) {
+                    this.health = this.maxHealth;
+                }
+                break;
+            case 'healthRegen':
+                // Health regen is applied in update() method
+                break;
+            case 'movementSpeed':
+                // Movement speed is applied in update() method
+                break;
+            case 'reload':
+                // Reload is applied in canShoot() method
+                break;
+            // Other stats (bulletSpeed, bulletPenetration, bulletDamage, bodyDamage)
+            // are applied when creating bullets or calculating damage
+        }
+    }
+    
+    /**
+     * Get available stat points
+     */
+    getStatPoints() {
+        return this.statPoints;
+    }
+    
+    /**
+     * Check if stat allocation is pending
+     */
+    hasPendingStatAllocation() {
+        return this.pendingStatAllocation && this.statPoints > 0;
+    }
+    
+    /**
+     * Mark stat allocation as complete
+     */
+    completeStatAllocation() {
+        this.pendingStatAllocation = false;
     }
 
     draw(ctx) {
@@ -231,7 +323,7 @@ class Tank {
     }
 
     getBodyDamage() {
-        // Calculate body damage based on stats
-        return this.stats.bodyDamage || GameConfig.TANK.DEFAULT_BODY_DAMAGE;
+        // Calculate body damage: base damage (3) + stat points
+        return GameConfig.TANK.DEFAULT_BODY_DAMAGE + this.stats.bodyDamage;
     }
 }

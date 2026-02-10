@@ -145,3 +145,135 @@ body {
 .hidden {
     display: none !important;
 }
+
+/* Stat Allocation UI */
+#statAllocationUI {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+    pointer-events: auto;
+}
+
+.stat-allocation-panel {
+    background: rgba(26, 26, 46, 0.95);
+    border: 2px solid #4a90e2;
+    border-radius: 12px;
+    padding: 30px;
+    min-width: 400px;
+    max-width: 500px;
+    color: #fff;
+}
+
+.stat-allocation-panel h2 {
+    color: #4a90e2;
+    margin-bottom: 20px;
+    text-align: center;
+    font-size: 24px;
+}
+
+.stat-points-display {
+    text-align: center;
+    margin-bottom: 20px;
+    font-size: 18px;
+    font-weight: bold;
+    color: #4ecdc4;
+}
+
+.stat-points-display span {
+    color: #ffd700;
+    font-size: 24px;
+}
+
+.stats-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.stat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stat-name {
+    flex: 1;
+    font-size: 14px;
+}
+
+.stat-value {
+    min-width: 30px;
+    text-align: center;
+    font-weight: bold;
+    color: #4ecdc4;
+    font-size: 16px;
+}
+
+.stat-btn {
+    width: 35px;
+    height: 35px;
+    background: #4a90e2;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 20px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-left: 10px;
+}
+
+.stat-btn:hover:not(:disabled) {
+    background: #357abd;
+    transform: scale(1.1);
+}
+
+.stat-btn:active:not(:disabled) {
+    transform: scale(0.95);
+}
+
+.stat-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.stat-allocation-actions {
+    text-align: center;
+}
+
+.close-btn {
+    padding: 12px 30px;
+    background: #4a90e2;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.close-btn:hover {
+    background: #357abd;
+    transform: scale(1.05);
+}
+
+.close-btn.has-points {
+    background: #ff9800;
+}
+
+.close-btn.has-points:hover {
+    background: #f57c00;
+}
