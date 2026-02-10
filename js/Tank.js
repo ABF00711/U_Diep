@@ -27,7 +27,7 @@ class Tank {
         this.stats = {
             healthRegen: options.healthRegen || 0,
             maxHealth: options.maxHealth || 0,
-            bodyDamage: options.bodyDamage || 0,
+            bodyDamage: options.bodyDamage || 3,
             bulletSpeed: options.bulletSpeed || 0,
             bulletPenetration: options.bulletPenetration || 0,
             bulletDamage: options.bulletDamage || 0,
@@ -38,6 +38,10 @@ class Tank {
         // Shooting
         this.lastShotTime = 0;
         this.reloadTime = 1000;// Base reload time in ms
+        
+        // Body damage cooldown - tanks can only damage entities once per second
+        this.bodyDamageCooldown = 1000; // 1 second in milliseconds
+        this.lastBodyDamageTime = {}; // Track last body damage time per target (targetId -> timestamp)
     }
 
     update(deltaTime, input, canvasWidth, canvasHeight) {
@@ -201,5 +205,22 @@ class Tank {
         ctx.lineWidth = 2;
         ctx.strokeText(this.name, this.x, this.y - this.size - 35);
         ctx.fillText(this.name, this.x, this.y - this.size - 35);
+    }
+
+    canDamageTarget(targetId, currentTime) {
+        // Check if enough time has passed since last body damage to this target
+        const lastDamage = this.lastBodyDamageTime[targetId] || 0;
+        return (currentTime - lastDamage) >= this.bodyDamageCooldown;
+    }
+
+    recordBodyDamageToTarget(targetId, currentTime) {
+        // Record that we damaged this target at this time
+        this.lastBodyDamageTime[targetId] = currentTime;
+    }
+
+    getBodyDamage() {
+        // Calculate body damage based on stats
+        const baseBodyDamage = this.stats.bodyDamage || 3;
+        return baseBodyDamage;
     }
 }

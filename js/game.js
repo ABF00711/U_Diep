@@ -263,7 +263,7 @@ class Game {
             return true;
         });
 
-        // Check tank collision with bots (body damage)
+        // Check tank collision with bots (mutual body damage)
         if (this.playerTank) {
             const currentTime = Date.now(); // Get current time in milliseconds
             
@@ -272,16 +272,65 @@ class Game {
                 
                 const distance = getDistance(bot.x, bot.y, this.playerTank.x, this.playerTank.y);
                 if (distance < bot.size + this.playerTank.size) {
-                    // Tank touched bot - check cooldown before applying damage
-                    if (this.playerTank && bot.canDamagePlayer(this.playerTank.id, currentTime)) {
-                        // Apply body damage (only once per second)
+                    // Mutual collision - both take body damage
+                    
+                    // Bot damages player tank
+                    if (bot.canDamagePlayer(this.playerTank.id, currentTime)) {
                         const isDead = this.playerTank.takeDamage(bot.bodyDamage);
                         bot.recordDamageToPlayer(this.playerTank.id, currentTime);
                         
                         if (isDead) {
-                            // Player died from bot collision
                             this.killSelf();
-                            break; // Exit loop since player is dead
+                            break;
+                        }
+                    }
+                    
+                    // Player tank damages bot
+                    if (this.playerTank && this.playerTank.canDamageTarget(bot.id, currentTime)) {
+                        const result = bot.takeDamage(this.playerTank.getBodyDamage(), this.playerTank.id);
+                        this.playerTank.recordBodyDamageToTarget(bot.id, currentTime);
+                        
+                        if (result.killed && this.playerTank) {
+                            // Player killed the bot - give XP
+                            this.playerTank.addXP(result.xpReward);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check tank vs tank collisions (mutual body damage)
+        const currentTime = Date.now();
+        const allTanks = [this.playerTank, ...this.enemyTanks].filter(t => t);
+        
+        for (let i = 0; i < allTanks.length; i++) {
+            for (let j = i + 1; j < allTanks.length; j++) {
+                const tank1 = allTanks[i];
+                const tank2 = allTanks[j];
+                
+                if (!tank1 || !tank2) continue;
+                
+                const distance = getDistance(tank1.x, tank1.y, tank2.x, tank2.y);
+                if (distance < tank1.size + tank2.size) {
+                    // Tanks are colliding - mutual body damage
+                    
+                    // Tank1 damages Tank2
+                    if (tank1.canDamageTarget(tank2.id, currentTime)) {
+                        const isDead = tank2.takeDamage(tank1.getBodyDamage());
+                        tank1.recordBodyDamageToTarget(tank2.id, currentTime);
+                        
+                        if (isDead && tank2.isPlayer) {
+                            this.killSelf();
+                        }
+                    }
+                    
+                    // Tank2 damages Tank1
+                    if (tank2.canDamageTarget(tank1.id, currentTime)) {
+                        const isDead = tank1.takeDamage(tank2.getBodyDamage());
+                        tank2.recordBodyDamageToTarget(tank1.id, currentTime);
+                        
+                        if (isDead && tank1.isPlayer) {
+                            this.killSelf();
                         }
                     }
                 }
