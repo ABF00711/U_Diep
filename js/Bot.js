@@ -38,6 +38,10 @@ class Bot {
             Math.random() * (GameConfig.BOT.DIRECTION_CHANGE_MAX - GameConfig.BOT.DIRECTION_CHANGE_MIN);
         this.directionChangeInterval = changeInterval;
         
+        // Rotation for visual effect
+        this.rotation = Math.random() * Math.PI * 2; // Random initial rotation
+        this.rotationSpeed = (Math.random() - 0.5) * 0.05; // Random rotation speed (-0.025 to 0.025 rad/frame)
+        
         // Sprite
         this.sprite = options.sprite || null; // Loaded image
         this.spriteLoaded = false;
@@ -73,6 +77,9 @@ class Bot {
             this.x = random(this.size + margin, canvasWidth - this.size - margin);
             this.y = random(this.size + margin, canvasHeight - this.size - margin);
         }
+
+        // Update rotation (continuous rotation for visual effect)
+        this.rotation += this.rotationSpeed * deltaTime * 60; // Scale by 60 for consistent speed regardless of FPS
 
         // Update movement direction periodically
         this.directionChangeTime += deltaTime;
@@ -134,6 +141,8 @@ class Bot {
         this.isDead = false;
         this.deathTime = 0;
         this.moveDirection = Math.random() * Math.PI * 2;
+        this.rotation = Math.random() * Math.PI * 2; // Random initial rotation
+        this.rotationSpeed = (Math.random() - 0.5) * 0.05; // Random rotation speed
     }
 
     draw(ctx) {
@@ -141,6 +150,7 @@ class Bot {
 
         ctx.save();
         ctx.translate(this.x, this.y);
+        ctx.rotate(this.rotation); // Apply rotation
 
         // Draw pellet programmatically (always use programmatic drawing, no sprites)
         if (this.type === 'triangle') {
@@ -151,7 +161,7 @@ class Bot {
 
         ctx.restore();
 
-        // Draw health bar
+        // Draw health bar (outside rotation so it stays horizontal)
         this.drawHealthBar(ctx);
     }
     
