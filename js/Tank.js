@@ -107,6 +107,9 @@ class Tank {
         // Calculate bullet speed based on stats
         const bulletSpeed = GameConfig.BULLET.BASE_SPEED + (this.stats.bulletSpeed || 0) * GameConfig.BULLET.SPEED_MULTIPLIER;
         
+        // Calculate bullet range based on bulletSpeed stat (faster bullets travel further)
+        const bulletMaxRange = GameConfig.BULLET.BASE_MAX_RANGE + (this.stats.bulletSpeed || 0) * GameConfig.BULLET.RANGE_MULTIPLIER;
+        
         // Create bullet
         const bullet = new Bullet(
             barrelEndX,
@@ -118,6 +121,7 @@ class Tank {
                 color: this.isPlayer ? GameConfig.COLORS.PLAYER_BULLET : GameConfig.COLORS.ENEMY_BULLET,
                 damage: GameConfig.BULLET.BASE_DAMAGE + (this.stats.bulletDamage || 0) * GameConfig.BULLET.DAMAGE_MULTIPLIER,
                 penetration: GameConfig.BULLET.DEFAULT_PENETRATION + (this.stats.bulletPenetration || 0),
+                maxRange: bulletMaxRange,
                 ownerId: this.id,
                 isPlayer: this.isPlayer
             }

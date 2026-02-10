@@ -2,6 +2,11 @@
 
 class Bullet {
     constructor(x, y, angle, speed, options = {}) {
+        // Spawn position (starting point for range calculation)
+        this.spawnX = x;
+        this.spawnY = y;
+        
+        // Current position
         this.x = x;
         this.y = y;
         this.angle = angle;
@@ -13,7 +18,11 @@ class Bullet {
         this.ownerId = options.ownerId || null;
         this.isPlayer = options.isPlayer || false;
         this.lifetime = options.lifetime || 5000; // 5 seconds max
+        this.maxRange = options.maxRange || GameConfig.BULLET.BASE_MAX_RANGE;
         this.age = 0;
+        
+        // Track targets already hit this frame to prevent multiple hits on same target
+        this.hitTargetsThisFrame = new Set();
     }
 
     update(deltaTime) {
@@ -23,6 +32,26 @@ class Bullet {
         
         // Update age
         this.age += deltaTime * 1000; // Convert to milliseconds
+        
+        // Clear hit targets set each frame (allows hitting same target again if bullet passes through)
+        this.hitTargetsThisFrame.clear();
+    }
+    
+    /**
+     * Check if this target was already hit this frame
+     * @param {string} targetId - ID of the target
+     * @returns {boolean} - True if already hit this frame
+     */
+    hasHitTarget(targetId) {
+        return this.hitTargetsThisFrame.has(targetId);
+    }
+    
+    /**
+     * Mark a target as hit this frame
+     * @param {string} targetId - ID of the target
+     */
+    markTargetHit(targetId) {
+        this.hitTargetsThisFrame.add(targetId);
     }
 
     draw(ctx) {
@@ -49,5 +78,14 @@ class Bullet {
 
     isExpired() {
         return this.age >= this.lifetime;
+    }
+    
+    /**
+     * Check if bullet has exceeded maximum range
+     * @returns {boolean} - True if bullet traveled beyond max range
+     */
+    isOutOfRange() {
+        const distanceTraveled = getDistance(this.spawnX, this.spawnY, this.x, this.y);
+        return distanceTraveled >= this.maxRange;
     }
 }

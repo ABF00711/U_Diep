@@ -9,18 +9,25 @@ class CollisionManager {
 
     /**
      * Check bullet collision with tanks
+     * Bullets with penetration > 1 can pass through multiple targets
      * @param {Bullet} bullet - Bullet to check
      * @param {Array} tanks - Array of tanks to check against
-     * @returns {boolean} - True if bullet should be removed
+     * @returns {boolean} - True if bullet should be removed (penetration reached 0)
      */
     checkBulletTankCollision(bullet, tanks) {
         for (const tank of tanks) {
             if (!tank || bullet.ownerId === tank.id) continue; // Can't hit self
+            if (bullet.hasHitTarget(tank.id)) continue; // Already hit this target this frame
             
             const distance = getDistance(bullet.x, bullet.y, tank.x, tank.y);
             if (distance < tank.size + bullet.size) {
-                // Hit!
+                // Hit! Mark this target as hit
+                bullet.markTargetHit(tank.id);
+                
+                // Apply damage
                 const isDead = tank.takeDamage(bullet.damage);
+                
+                // Decrease penetration (bullet passes through)
                 bullet.penetration--;
                 
                 // Check if player killed enemy tank
@@ -39,26 +46,39 @@ class CollisionManager {
                     this.deathHandler.handlePlayerDeath('bullet');
                 }
                 
-                return bullet.penetration <= 0; // Remove bullet if no penetration left
+                // If penetration is 0, bullet should be removed (can't pass through more)
+                if (bullet.penetration <= 0) {
+                    return true; // Remove bullet
+                }
+                
+                // Bullet continues forward (penetration > 0), check for more targets
+                // Don't return here - continue checking other tanks
             }
         }
-        return false;
+        return false; // Bullet still has penetration left, keep it
     }
 
     /**
      * Check bullet collision with bots
+     * Bullets with penetration > 1 can pass through multiple bots
      * @param {Bullet} bullet - Bullet to check
      * @param {Array} bots - Array of bots to check against
-     * @returns {boolean} - True if bullet should be removed
+     * @returns {boolean} - True if bullet should be removed (penetration reached 0)
      */
     checkBulletBotCollision(bullet, bots) {
         for (const bot of bots) {
             if (!bot || bot.isDead) continue;
+            if (bullet.hasHitTarget(bot.id)) continue; // Already hit this bot this frame
             
             const distance = getDistance(bullet.x, bullet.y, bot.x, bot.y);
             if (distance < bot.size + bullet.size) {
-                // Hit bot!
+                // Hit bot! Mark this bot as hit
+                bullet.markTargetHit(bot.id);
+                
+                // Apply damage
                 const result = bot.takeDamage(bullet.damage, bullet.ownerId);
+                
+                // Decrease penetration (bullet passes through)
                 bullet.penetration--;
                 
                 // Give XP if player killed bot
@@ -66,10 +86,16 @@ class CollisionManager {
                     this.game.playerTank.addXP(result.xpReward);
                 }
                 
-                return bullet.penetration <= 0; // Remove bullet if no penetration left
+                // If penetration is 0, bullet should be removed (can't pass through more)
+                if (bullet.penetration <= 0) {
+                    return true; // Remove bullet
+                }
+                
+                // Bullet continues forward (penetration > 0), check for more bots
+                // Don't return here - continue checking other bots
             }
         }
-        return false;
+        return false; // Bullet still has penetration left, keep it
     }
 
     /**
