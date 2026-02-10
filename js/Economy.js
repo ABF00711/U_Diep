@@ -1,7 +1,7 @@
 // Economy Class - Manages player balance, wagers, and transactions
 
 class Economy {
-    constructor(initialBalance = 100) {
+    constructor(initialBalance = GameConfig.ECONOMY.INITIAL_BALANCE) {
         this.balance = initialBalance; // Current balance (Test Coins)
         this.initialBalance = initialBalance; // Starting balance
         this.currentWager = 0; // Current wager in active room
@@ -62,8 +62,8 @@ class Economy {
             return { refunded: 0, fee: 0 };
         }
 
-        const fee = this.currentWager * 0.1; // 10% fee
-        const refunded = this.currentWager * 0.9; // 90% refund
+        const fee = this.currentWager * GameConfig.ECONOMY.KILL_BUTTON_FEE_PERCENT;
+        const refunded = this.currentWager * GameConfig.ECONOMY.KILL_BUTTON_REFUND_PERCENT;
         
         this.balance += refunded;
         
@@ -223,7 +223,7 @@ class Economy {
     /**
      * Reset economy (for testing/new game)
      */
-    reset(initialBalance = 100) {
+    reset(initialBalance = GameConfig.ECONOMY.INITIAL_BALANCE) {
         this.balance = initialBalance;
         this.initialBalance = initialBalance;
         this.currentWager = 0;

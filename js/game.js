@@ -15,7 +15,12 @@ class Game {
         this.lastTime = 0;
         
         // Economy system
-        this.economy = new Economy(100); // Start with $100 Test Coins
+        this.economy = new Economy(GameConfig.ECONOMY.INITIAL_BALANCE);
+        
+        // Managers
+        this.rewardManager = new RewardManager(this.economy);
+        this.deathHandler = new DeathHandler(this);
+        this.collisionManager = new CollisionManager(this);
         
         // Game objects
         this.playerTank = null;
@@ -66,7 +71,7 @@ class Game {
             this.showRoomSelection();
             // Initialize balance display
             this.updateBalanceDisplay();
-        }, 1000);
+        }, GameConfig.UI.LOADING_SCREEN_DELAY);
     }
 
     showRoomSelection() {
@@ -81,6 +86,12 @@ class Game {
     }
 
     joinRoom(stake) {
+        // Validate stake amount
+        if (!GameConfig.ECONOMY.ROOM_STAKES.includes(stake)) {
+            alert(`Invalid stake amount! Valid amounts: $${GameConfig.ECONOMY.ROOM_STAKES.join(', $')}`);
+            return;
+        }
+        
         console.log(`Joining $${stake} room...`);
         
         // Check if player can afford the wager
@@ -115,32 +126,37 @@ class Game {
     startGame() {
         this.hideRoomSelection();
         
+        // Get current wager amount (for reward calculation)
+        const currentStake = this.economy.getCurrentWager();
+        
         // Create player tank
         this.playerTank = new Tank(
             this.canvas.width / 2,
             this.canvas.height / 2,
             {
-                color: '#4a90e2',
+                color: GameConfig.COLORS.PLAYER_TANK,
                 isPlayer: true,
-                name: 'Player1'
+                name: 'Player1',
+                stake: currentStake // Store player's stake
             }
         );
 
         // Create some enemy tanks for testing
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < GameConfig.GAME.DEFAULT_ENEMY_TANK_COUNT; i++) {
             this.enemyTanks.push(new Tank(
                 random(100, this.canvas.width - 100),
                 random(100, this.canvas.height - 100),
                 {
-                    color: '#e24a4a',
+                    color: GameConfig.COLORS.ENEMY_TANK,
                     isPlayer: false,
-                    name: `Enemy${i + 1}`
+                    name: `Enemy${i + 1}`,
+                    stake: currentStake // Enemy tanks have same stake as room (for testing)
                 }
             ));
         }
 
         // Generate bots (replace pellets)
-        this.generateBots(15); // 15 bots total (mix of rectangles and triangles)
+        this.generateBots(GameConfig.GAME.DEFAULT_BOT_COUNT);
     }
 
     loadBotSprites() {
@@ -175,15 +191,15 @@ class Game {
         this.bots = [];
         
         // Ensure canvas has valid dimensions
-        const canvasWidth = Math.max(this.canvas.width || 800, 800);
-        const canvasHeight = Math.max(this.canvas.height || 600, 600);
+        const canvasWidth = Math.max(this.canvas.width || GameConfig.GAME.CANVAS_MIN_WIDTH, GameConfig.GAME.CANVAS_MIN_WIDTH);
+        const canvasHeight = Math.max(this.canvas.height || GameConfig.GAME.CANVAS_MIN_HEIGHT, GameConfig.GAME.CANVAS_MIN_HEIGHT);
         
         for (let i = 0; i < count; i++) {
             // Mix of rectangles and triangles (more rectangles than triangles)
-            const type = Math.random() < 0.7 ? 'rectangle' : 'triangle';
+            const type = Math.random() < GameConfig.BOT.RECTANGLE_SPAWN_CHANCE ? 'rectangle' : 'triangle';
             const bot = new Bot(
-                random(50, canvasWidth - 50),
-                random(50, canvasHeight - 50),
+                random(GameConfig.GAME.SPAWN_MARGIN, canvasWidth - GameConfig.GAME.SPAWN_MARGIN),
+                random(GameConfig.GAME.SPAWN_MARGIN, canvasHeight - GameConfig.GAME.SPAWN_MARGIN),
                 type
             );
             
@@ -202,15 +218,8 @@ class Game {
             
             // Process kill button penalty: 10% fee, 90% refund
             if (this.economy.isInMatch()) {
-                const refund = this.economy.refundKillButton();
-                console.log(`Kill button: Refunded $${refund.refunded.toFixed(2)}, Fee: $${refund.fee.toFixed(2)}`);
-                
-                // Show refund message
-                this.showMessage(`Exited match. Refunded: $${refund.refunded.toFixed(2)} (Fee: $${refund.fee.toFixed(2)})`, 3000);
+                this.deathHandler.handleKillButtonExit();
             }
-            
-            // Update balance display
-            this.updateBalanceDisplay();
             
             // TODO: Send to server, remove from room
             this.playerTank = null;
@@ -220,7 +229,7 @@ class Game {
         }
     }
     
-    showMessage(text, duration = 2000) {
+    showMessage(text, duration = GameConfig.UI.MESSAGE_DURATION) {
         // Create or get message element
         let messageEl = document.getElementById('gameMessage');
         if (!messageEl) {
@@ -279,9 +288,11 @@ class Game {
             }
         }
 
-        // Update enemy tanks
-        this.enemyTanks.forEach(tank => {
+        // Update enemy tanks and remove dead ones
+        this.enemyTanks = this.enemyTanks.filter(tank => {
+            if (!tank || tank.isDead) return false; // Remove dead tanks
             tank.update(deltaTime, null, this.canvas.width, this.canvas.height);
+            return true; // Keep alive tanks
         });
 
         // Update bots
@@ -300,73 +311,17 @@ class Game {
                 return false;
             }
             
-            // Check collisions with tanks
-            const allTanks = [this.playerTank, ...this.enemyTanks].filter(t => t);
-            for (const tank of allTanks) {
-                if (bullet.ownerId === tank.id) continue; // Can't hit self
-                
-                const distance = getDistance(bullet.x, bullet.y, tank.x, tank.y);
-                if (distance < tank.size + bullet.size) {
-                    // Hit!
-                    const isDead = tank.takeDamage(bullet.damage);
-                    bullet.penetration--;
-                    
-                    if (bullet.penetration <= 0) {
-                        return false; // Remove bullet
-                    }
-                    
-                    // Check if player killed another tank
-                    if (isDead && this.playerTank && bullet.ownerId === this.playerTank.id && !tank.isPlayer) {
-                        // Player killed enemy tank - give reward (90% of victim's stake)
-                        // For now, use a default stake amount (in real game, get from victim's wager)
-                        const victimStake = 5; // Default for testing - TODO: get from actual victim's wager
-                        const reward = victimStake * 0.9; // 90% reward
-                        const platformFee = victimStake * 0.1; // 10% platform fee
-                        
-                        this.economy.addKillReward(reward);
-                        this.economy.recordPlatformFee(platformFee);
-                        
-                        console.log(`Killed enemy! Reward: $${reward.toFixed(2)}, Platform fee: $${platformFee.toFixed(2)}`);
-                        this.showMessage(`Killed enemy! +$${reward.toFixed(2)}`, 2000);
-                        this.updateBalanceDisplay();
-                    }
-                    
-                    if (isDead && tank.isPlayer) {
-                        // Player died - lose entire stake (no refund)
-                        if (this.economy.isInMatch()) {
-                            const lostWager = this.economy.getCurrentWager();
-                            this.economy.currentWager = 0; // Clear wager (player lost it all)
-                            console.log(`Player died! Lost entire wager: $${lostWager}`);
-                            this.showMessage(`You died! Lost $${lostWager}`, 3000);
-                            this.updateBalanceDisplay();
-                        }
-                        this.killSelf();
-                    }
-                    break;
-                }
+            // Check collisions with tanks (only alive ones)
+            const allTanks = [this.playerTank, ...this.enemyTanks].filter(t => t && !t.isDead);
+            const shouldRemove = this.collisionManager.checkBulletTankCollision(bullet, allTanks);
+            if (shouldRemove) {
+                return false; // Remove bullet
             }
             
             // Check collisions with bots
-            for (const bot of this.bots) {
-                if (!bot || bot.isDead) continue;
-                
-                const distance = getDistance(bullet.x, bullet.y, bot.x, bot.y);
-                if (distance < bot.size + bullet.size) {
-                    // Hit bot!
-                    const result = bot.takeDamage(bullet.damage, bullet.ownerId);
-                    bullet.penetration--;
-                    
-                    if (result.killed && result.attackerId && this.playerTank && result.attackerId === this.playerTank.id) {
-                        // Player killed the bot - give XP
-                        this.playerTank.addXP(result.xpReward);
-                        // Note: Bot kills don't give money, only XP
-                    }
-                    
-                    if (bullet.penetration <= 0) {
-                        return false; // Remove bullet
-                    }
-                    break;
-                }
+            const shouldRemoveBot = this.collisionManager.checkBulletBotCollision(bullet, this.bots);
+            if (shouldRemoveBot) {
+                return false; // Remove bullet
             }
             
             return true;
@@ -374,117 +329,12 @@ class Game {
 
         // Check tank collision with bots (mutual body damage)
         if (this.playerTank) {
-            const currentTime = Date.now(); // Get current time in milliseconds
-            
-            for (const bot of this.bots) {
-                if (!bot || bot.isDead) continue;
-                
-                const distance = getDistance(bot.x, bot.y, this.playerTank.x, this.playerTank.y);
-                if (distance < bot.size + this.playerTank.size) {
-                    // Mutual collision - both take body damage
-                    
-                    // Bot damages player tank
-                    if (bot.canDamagePlayer(this.playerTank.id, currentTime)) {
-                        const isDead = this.playerTank.takeDamage(bot.bodyDamage);
-                        bot.recordDamageToPlayer(this.playerTank.id, currentTime);
-                        
-                        if (isDead) {
-                            // Player died from bot collision - lose entire stake
-                            if (this.economy.isInMatch()) {
-                                const lostWager = this.economy.getCurrentWager();
-                                this.economy.currentWager = 0; // Clear wager (player lost it all)
-                                console.log(`Player died from bot! Lost entire wager: $${lostWager}`);
-                                this.showMessage(`You died! Lost $${lostWager}`, 3000);
-                                this.updateBalanceDisplay();
-                            }
-                            this.killSelf();
-                            break;
-                        }
-                    }
-                    
-                    // Player tank damages bot
-                    if (this.playerTank && this.playerTank.canDamageTarget(bot.id, currentTime)) {
-                        const result = bot.takeDamage(this.playerTank.getBodyDamage(), this.playerTank.id);
-                        this.playerTank.recordBodyDamageToTarget(bot.id, currentTime);
-                        
-                        if (result.killed && this.playerTank) {
-                            // Player killed the bot - give XP
-                            this.playerTank.addXP(result.xpReward);
-                            // Note: Bot kills don't give money, only XP
-                        }
-                    }
-                }
-            }
+            this.collisionManager.checkTankBotCollision(this.playerTank, this.bots);
         }
 
-        // Check tank vs tank collisions (mutual body damage)
-        const currentTime = Date.now();
-        const allTanks = [this.playerTank, ...this.enemyTanks].filter(t => t);
-        
-        for (let i = 0; i < allTanks.length; i++) {
-            for (let j = i + 1; j < allTanks.length; j++) {
-                const tank1 = allTanks[i];
-                const tank2 = allTanks[j];
-                
-                if (!tank1 || !tank2) continue;
-                
-                const distance = getDistance(tank1.x, tank1.y, tank2.x, tank2.y);
-                if (distance < tank1.size + tank2.size) {
-                    // Tanks are colliding - mutual body damage
-                    
-                    // Tank1 damages Tank2
-                    if (tank1.canDamageTarget(tank2.id, currentTime)) {
-                        const isDead = tank2.takeDamage(tank1.getBodyDamage());
-                        tank1.recordBodyDamageToTarget(tank2.id, currentTime);
-                        
-                        if (isDead && tank2.isPlayer) {
-                            // Player (tank2) died from tank collision - lose entire stake
-                            if (this.economy.isInMatch()) {
-                                const lostWager = this.economy.getCurrentWager();
-                                this.economy.currentWager = 0; // Clear wager (player lost it all)
-                                console.log(`Player died from tank collision! Lost entire wager: $${lostWager}`);
-                                this.showMessage(`You died! Lost $${lostWager}`, 3000);
-                                this.updateBalanceDisplay();
-                            }
-                            this.killSelf();
-                        }
-                        
-                        // Check if player (tank1) killed tank2 - give reward
-                        if (isDead && tank1.isPlayer && !tank2.isPlayer) {
-                            // Player killed enemy tank - give reward (90% of victim's stake)
-                            const victimStake = 5; // Default for testing - TODO: get from actual victim's wager
-                            const reward = victimStake * 0.9; // 90% reward
-                            const platformFee = victimStake * 0.1; // 10% platform fee
-                            
-                            this.economy.addKillReward(reward);
-                            this.economy.recordPlatformFee(platformFee);
-                            
-                            console.log(`Killed enemy tank! Reward: $${reward.toFixed(2)}, Platform fee: $${platformFee.toFixed(2)}`);
-                            this.showMessage(`Killed enemy! +$${reward.toFixed(2)}`, 2000);
-                            this.updateBalanceDisplay();
-                        }
-                    }
-                    
-                    // Tank2 damages Tank1
-                    if (tank2.canDamageTarget(tank1.id, currentTime)) {
-                        const isDead = tank1.takeDamage(tank2.getBodyDamage());
-                        tank2.recordBodyDamageToTarget(tank1.id, currentTime);
-                        
-                        if (isDead && tank1.isPlayer) {
-                            // Player died from tank collision - lose entire stake
-                            if (this.economy.isInMatch()) {
-                                const lostWager = this.economy.getCurrentWager();
-                                this.economy.currentWager = 0; // Clear wager (player lost it all)
-                                console.log(`Player died from tank collision! Lost entire wager: $${lostWager}`);
-                                this.showMessage(`You died! Lost $${lostWager}`, 3000);
-                                this.updateBalanceDisplay();
-                            }
-                            this.killSelf();
-                        }
-                    }
-                }
-            }
-        }
+        // Check tank vs tank collisions (mutual body damage) - only alive tanks
+        const allTanks = [this.playerTank, ...this.enemyTanks].filter(t => t && !t.isDead);
+        this.collisionManager.checkTankTankCollision(allTanks);
 
         // Check pellet collisions (keep for now, can remove later)
         if (this.playerTank) {
@@ -502,7 +352,7 @@ class Game {
 
     render() {
         // Clear canvas
-        this.ctx.fillStyle = '#16213e';
+        this.ctx.fillStyle = GameConfig.COLORS.ARENA_BACKGROUND;
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         if (this.state === 'playing') {
@@ -526,9 +376,11 @@ class Game {
                 bullet.draw(this.ctx);
             });
 
-            // Draw enemy tanks
+            // Draw enemy tanks (only alive ones)
             this.enemyTanks.forEach(tank => {
-                tank.draw(this.ctx);
+                if (tank && !tank.isDead) {
+                    tank.draw(this.ctx);
+                }
             });
 
             // Draw player tank
@@ -553,7 +405,7 @@ class Game {
         this.lastTime = currentTime;
 
         // Cap deltaTime to prevent large jumps
-        const clampedDelta = Math.min(deltaTime, 0.1);
+        const clampedDelta = Math.min(deltaTime, GameConfig.GAME.MAX_DELTA_TIME);
 
         this.update(clampedDelta);
         this.render();

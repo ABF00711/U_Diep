@@ -5,29 +5,31 @@ class Tank {
         this.x = x;
         this.y = y;
         this.angle = options.angle || 0;
-        this.size = options.size || 30;
-        this.barrelLength = options.barrelLength || 25;
-        this.barrelWidth = options.barrelWidth || 24; // Thicker barrel
-        this.color = options.color || '#4a90e2';
-        this.health = options.health || 100;
-        this.maxHealth = options.maxHealth || 100;
+        this.size = options.size || GameConfig.TANK.DEFAULT_SIZE;
+        this.barrelLength = options.barrelLength || GameConfig.TANK.DEFAULT_BARREL_LENGTH;
+        this.barrelWidth = options.barrelWidth || GameConfig.TANK.DEFAULT_BARREL_WIDTH;
+        this.color = options.color || GameConfig.COLORS.PLAYER_TANK;
+        this.health = options.health || GameConfig.TANK.DEFAULT_HEALTH;
+        this.maxHealth = options.maxHealth || GameConfig.TANK.DEFAULT_MAX_HEALTH;
         this.level = options.level || 1;
         this.xp = options.xp || 0;
-        this.xpToNextLevel = options.xpToNextLevel || 100;
+        this.xpToNextLevel = options.xpToNextLevel || GameConfig.XP.BASE_XP_TO_NEXT_LEVEL;
         this.name = options.name || 'Player';
         this.id = options.id || Math.random().toString(36).substr(2, 9);
         this.isPlayer = options.isPlayer || false;
+        this.stake = options.stake || 0; // Wager amount for this tank (for reward calculation)
+        this.isDead = false; // Track if tank is dead
         
         // Movement
-        this.speed = options.speed || 200;
+        this.speed = options.speed || GameConfig.TANK.DEFAULT_SPEED;
         this.vx = 0;
         this.vy = 0;
         
         // Tank stats (diep.io style)
         this.stats = {
             healthRegen: options.healthRegen || 0,
-            maxHealth: options.maxHealth || 0,
-            bodyDamage: options.bodyDamage || 3,
+            maxHealth: options.maxHealth || GameConfig.TANK.DEFAULT_MAX_HEALTH,
+            bodyDamage: options.bodyDamage || GameConfig.TANK.DEFAULT_BODY_DAMAGE,
             bulletSpeed: options.bulletSpeed || 0,
             bulletPenetration: options.bulletPenetration || 0,
             bulletDamage: options.bulletDamage || 0,
@@ -37,10 +39,10 @@ class Tank {
         
         // Shooting
         this.lastShotTime = 0;
-        this.reloadTime = 1000;// Base reload time in ms
+        this.reloadTime = GameConfig.TANK.BASE_RELOAD_TIME;
         
         // Body damage cooldown - tanks can only damage entities once per second
-        this.bodyDamageCooldown = 1000; // 1 second in milliseconds
+        this.bodyDamageCooldown = GameConfig.TANK.BODY_DAMAGE_COOLDOWN;
         this.lastBodyDamageTime = {}; // Track last body damage time per target (targetId -> timestamp)
     }
 
@@ -48,8 +50,9 @@ class Tank {
         // Update movement
         if (this.isPlayer && input) {
             const direction = input.getMovementDirection();
-            this.vx = direction.dx * this.speed * (1 + this.stats.movementSpeed * 0.1);
-            this.vy = direction.dy * this.speed * (1 + this.stats.movementSpeed * 0.1);
+            const speedMultiplier = 1 + this.stats.movementSpeed * GameConfig.TANK.MOVEMENT_SPEED_MULTIPLIER;
+            this.vx = direction.dx * this.speed * speedMultiplier;
+            this.vy = direction.dy * this.speed * speedMultiplier;
             
             // Update barrel angle to follow mouse
             const mouse = input.getMousePosition();
@@ -77,7 +80,8 @@ class Tank {
     }
 
     canShoot() {
-        return this.lastShotTime >= this.reloadTime * (1 - this.stats.reload * 0.1);
+        const reloadMultiplier = 1 - this.stats.reload * GameConfig.TANK.RELOAD_MULTIPLIER;
+        return this.lastShotTime >= this.reloadTime * reloadMultiplier;
     }
 
     shoot() {
@@ -90,8 +94,7 @@ class Tank {
         const barrelEndY = this.y + Math.sin(this.angle) * (this.size + this.barrelLength);
         
         // Calculate bullet speed based on stats
-        const baseSpeed = 500;
-        const bulletSpeed = baseSpeed + (this.stats.bulletSpeed || 0) * 50;
+        const bulletSpeed = GameConfig.BULLET.BASE_SPEED + (this.stats.bulletSpeed || 0) * GameConfig.BULLET.SPEED_MULTIPLIER;
         
         // Create bullet
         const bullet = new Bullet(
@@ -100,10 +103,10 @@ class Tank {
             this.angle,
             bulletSpeed,
             {
-                size: 14 + (this.stats.bulletDamage || 0) * 0.5, // Bigger bullets (base size 6 instead of 3)
-                color: this.isPlayer ? '#4a90e2' : '#e24a4a',
-                damage: 10 + (this.stats.bulletDamage || 0) * 2,
-                penetration: 1 + (this.stats.bulletPenetration || 0),
+                size: GameConfig.BULLET.BASE_SIZE + (this.stats.bulletDamage || 0) * GameConfig.BULLET.SIZE_MULTIPLIER,
+                color: this.isPlayer ? GameConfig.COLORS.PLAYER_BULLET : GameConfig.COLORS.ENEMY_BULLET,
+                damage: GameConfig.BULLET.BASE_DAMAGE + (this.stats.bulletDamage || 0) * GameConfig.BULLET.DAMAGE_MULTIPLIER,
+                penetration: GameConfig.BULLET.DEFAULT_PENETRATION + (this.stats.bulletPenetration || 0),
                 ownerId: this.id,
                 isPlayer: this.isPlayer
             }
@@ -114,6 +117,9 @@ class Tank {
 
     takeDamage(amount) {
         this.health = Math.max(0, this.health - amount);
+        if (this.health <= 0) {
+            this.isDead = true;
+        }
         return this.health <= 0;
     }
 
@@ -127,7 +133,7 @@ class Tank {
 
     levelUp() {
         this.level++;
-        this.xpToNextLevel = Math.floor(this.xpToNextLevel * 1.2); // Increase XP needed
+        this.xpToNextLevel = Math.floor(this.xpToNextLevel * GameConfig.XP.XP_MULTIPLIER_PER_LEVEL);
         // TODO: Allow player to allocate stat points
     }
 
@@ -173,12 +179,18 @@ class Tank {
         const barY = this.y - this.size - 15;
 
         // Background
-        ctx.fillStyle = '#333';
+        ctx.fillStyle = GameConfig.COLORS.HEALTH_BAR_BG;
         ctx.fillRect(barX, barY, barWidth, barHeight);
 
         // Health fill
         const healthPercent = this.health / this.maxHealth;
-        ctx.fillStyle = healthPercent > 0.5 ? '#4caf50' : healthPercent > 0.25 ? '#ff9800' : '#f44336';
+        let healthColor = GameConfig.COLORS.HEALTH_BAR_LOW;
+        if (healthPercent > 0.5) {
+            healthColor = GameConfig.COLORS.HEALTH_BAR_HIGH;
+        } else if (healthPercent > 0.25) {
+            healthColor = GameConfig.COLORS.HEALTH_BAR_MEDIUM;
+        }
+        ctx.fillStyle = healthColor;
         ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
 
         // Border
@@ -220,7 +232,6 @@ class Tank {
 
     getBodyDamage() {
         // Calculate body damage based on stats
-        const baseBodyDamage = this.stats.bodyDamage || 3;
-        return baseBodyDamage;
+        return this.stats.bodyDamage || GameConfig.TANK.DEFAULT_BODY_DAMAGE;
     }
 }

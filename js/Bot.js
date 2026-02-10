@@ -2,8 +2,8 @@
 
 class Bot {
     // Admin-configurable settings
-    static DEFAULT_RESPAWN_TIME = 60000; // 1 minute in milliseconds
-    static DEFAULT_DAMAGE_COOLDOWN = 1000; // 1 second in milliseconds
+    static DEFAULT_RESPAWN_TIME = GameConfig.BOT.DEFAULT_RESPAWN_TIME;
+    static DEFAULT_DAMAGE_COOLDOWN = GameConfig.BOT.DEFAULT_DAMAGE_COOLDOWN;
     
     static setRespawnTime(seconds) {
         Bot.DEFAULT_RESPAWN_TIME = seconds * 1000; // Convert to milliseconds
@@ -19,30 +19,24 @@ class Bot {
         this.id = options.id || Math.random().toString(36).substr(2, 9);
         
         // Bot properties based on type
-        if (type === 'triangle') {
-            this.health = options.health || 150;
-            this.maxHealth = options.maxHealth || 150;
-            this.bodyDamage = options.bodyDamage || 15;
-            this.size = options.size || 25;
-            this.xpReward = 100;
-            this.spriteName = 'SharpTriangle'; // Use SharpTriangle.png or RoundedTriangle.png
-        } else {
-            // Rectangle (weaker)
-            this.health = options.health || 75;
-            this.maxHealth = options.maxHealth || 75;
-            this.bodyDamage = options.bodyDamage || 2;
-            this.size = options.size || 20;
-            this.xpReward = 50;
-            this.spriteName = 'SharpRectangle'; // Use SharpRectangle.png or RoundedRectangle.png
-        }
+        const botConfig = type === 'triangle' ? GameConfig.BOT.TRIANGLE : GameConfig.BOT.RECTANGLE;
+        
+        this.health = options.health || botConfig.HEALTH;
+        this.maxHealth = options.maxHealth || botConfig.MAX_HEALTH;
+        this.bodyDamage = options.bodyDamage || botConfig.BODY_DAMAGE;
+        this.size = options.size || botConfig.SIZE;
+        this.xpReward = botConfig.XP_REWARD;
+        this.spriteName = botConfig.SPRITE_NAME;
         
         // Movement
-        this.speed = options.speed || 30; // Slow movement
+        this.speed = options.speed || GameConfig.BOT.DEFAULT_SPEED;
         this.vx = 0;
         this.vy = 0;
         this.moveDirection = Math.random() * Math.PI * 2; // Random initial direction
         this.directionChangeTime = 0;
-        this.directionChangeInterval = 2 + Math.random() * 3; // Change direction every 2-5 seconds
+        const changeInterval = GameConfig.BOT.DIRECTION_CHANGE_MIN + 
+            Math.random() * (GameConfig.BOT.DIRECTION_CHANGE_MAX - GameConfig.BOT.DIRECTION_CHANGE_MIN);
+        this.directionChangeInterval = changeInterval;
         
         // Sprite
         this.sprite = options.sprite || null; // Loaded image
@@ -52,10 +46,10 @@ class Bot {
         this.isDead = false;
         this.deathTime = 0;
         // Respawn time can be configured by admin (default: 1 minute)
-        this.respawnTime = options.respawnTime || Bot.DEFAULT_RESPAWN_TIME || 60000; // milliseconds
+        this.respawnTime = options.respawnTime || Bot.DEFAULT_RESPAWN_TIME || GameConfig.BOT.DEFAULT_RESPAWN_TIME;
         
         // Damage cooldown - bots can only damage players once per second (admin configurable)
-        this.damageCooldown = options.damageCooldown || Bot.DEFAULT_DAMAGE_COOLDOWN; // milliseconds
+        this.damageCooldown = options.damageCooldown || Bot.DEFAULT_DAMAGE_COOLDOWN || GameConfig.BOT.DEFAULT_DAMAGE_COOLDOWN;
         this.lastDamageTime = {}; // Track last damage time per player (playerId -> timestamp)
     }
 
@@ -75,8 +69,9 @@ class Bot {
         
         // Ensure bot has valid position
         if (typeof this.x !== 'number' || typeof this.y !== 'number') {
-            this.x = random(this.size + 50, canvasWidth - this.size - 50);
-            this.y = random(this.size + 50, canvasHeight - this.size - 50);
+            const margin = GameConfig.GAME.SPAWN_MARGIN;
+            this.x = random(this.size + margin, canvasWidth - this.size - margin);
+            this.y = random(this.size + margin, canvasHeight - this.size - margin);
         }
 
         // Update movement direction periodically
@@ -84,7 +79,9 @@ class Bot {
         if (this.directionChangeTime >= this.directionChangeInterval) {
             this.moveDirection = Math.random() * Math.PI * 2; // Random new direction
             this.directionChangeTime = 0;
-            this.directionChangeInterval = 2 + Math.random() * 3; // New interval
+            const changeInterval = GameConfig.BOT.DIRECTION_CHANGE_MIN + 
+                Math.random() * (GameConfig.BOT.DIRECTION_CHANGE_MAX - GameConfig.BOT.DIRECTION_CHANGE_MIN);
+            this.directionChangeInterval = changeInterval;
         }
 
         // Move bot (slow, random movement)
@@ -126,12 +123,13 @@ class Bot {
 
     respawn(canvasWidth, canvasHeight) {
         // Ensure valid canvas dimensions
-        canvasWidth = Math.max(canvasWidth || 800, 800);
-        canvasHeight = Math.max(canvasHeight || 600, 600);
+        canvasWidth = Math.max(canvasWidth || GameConfig.GAME.CANVAS_MIN_WIDTH, GameConfig.GAME.CANVAS_MIN_WIDTH);
+        canvasHeight = Math.max(canvasHeight || GameConfig.GAME.CANVAS_MIN_HEIGHT, GameConfig.GAME.CANVAS_MIN_HEIGHT);
         
         // Respawn at random location
-        this.x = random(this.size + 50, canvasWidth - this.size - 50);
-        this.y = random(this.size + 50, canvasHeight - this.size - 50);
+        const margin = GameConfig.GAME.SPAWN_MARGIN;
+        this.x = random(this.size + margin, canvasWidth - this.size - margin);
+        this.y = random(this.size + margin, canvasHeight - this.size - margin);
         this.health = this.maxHealth;
         this.isDead = false;
         this.deathTime = 0;
@@ -155,7 +153,7 @@ class Bot {
             );
         } else {
             // Fallback: draw simple shape
-            ctx.fillStyle = this.type === 'triangle' ? '#ff6b6b' : '#4ecdc4';
+            ctx.fillStyle = this.type === 'triangle' ? GameConfig.COLORS.BOT_TRIANGLE : GameConfig.COLORS.BOT_RECTANGLE;
             ctx.beginPath();
             
             if (this.type === 'triangle') {
@@ -188,12 +186,18 @@ class Bot {
         const barY = this.y - this.size - 12;
 
         // Background
-        ctx.fillStyle = '#333';
+        ctx.fillStyle = GameConfig.COLORS.HEALTH_BAR_BG;
         ctx.fillRect(barX, barY, barWidth, barHeight);
 
         // Health fill
         const healthPercent = this.health / this.maxHealth;
-        ctx.fillStyle = healthPercent > 0.5 ? '#4caf50' : healthPercent > 0.25 ? '#ff9800' : '#f44336';
+        let healthColor = GameConfig.COLORS.HEALTH_BAR_LOW;
+        if (healthPercent > 0.5) {
+            healthColor = GameConfig.COLORS.HEALTH_BAR_HIGH;
+        } else if (healthPercent > 0.25) {
+            healthColor = GameConfig.COLORS.HEALTH_BAR_MEDIUM;
+        }
+        ctx.fillStyle = healthColor;
         ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
 
         // Border
