@@ -36,8 +36,28 @@ class CollisionManager {
                     const victimStake = tank.stake || this.game.economy.getCurrentWager() || GameConfig.ECONOMY.DEFAULT_VICTIM_STAKE;
                     const calculation = this.rewardManager.giveKillReward(victimStake);
                     
-                    console.log(`Killed enemy! Reward: $${calculation.reward.toFixed(2)}, Platform fee: $${calculation.platformFee.toFixed(2)}`);
-                    this.game.showMessage(`Killed enemy! +$${calculation.reward.toFixed(2)}`, GameConfig.UI.MESSAGE_DURATION);
+                    // Calculate XP reward based on level difference
+                    const levelDiff = tank.level - this.game.playerTank.level;
+                    let xpReward = GameConfig.XP.BASE_KILL_XP;
+                    
+                    // If enemy is higher level, give bonus XP
+                    if (levelDiff > 0) {
+                        xpReward += levelDiff * GameConfig.XP.LEVEL_DIFF_MULTIPLIER;
+                    }
+                    // If enemy is lower level, reduce XP (minimum 10 XP, never negative)
+                    else if (levelDiff < 0) {
+                        // Reduce XP by 5 per level difference, but never below minimum
+                        xpReward = Math.max(GameConfig.XP.MIN_KILL_XP, GameConfig.XP.BASE_KILL_XP + (levelDiff * 5));
+                    }
+                    
+                    // Cap XP at maximum
+                    xpReward = Math.min(xpReward, GameConfig.XP.MAX_KILL_XP);
+                    
+                    // Give XP to player
+                    this.game.playerTank.addXP(xpReward);
+                    
+                    console.log(`Killed enemy! Reward: $${calculation.reward.toFixed(2)}, XP: ${xpReward}, Level diff: ${levelDiff}`);
+                    this.game.showMessage(`Killed enemy! +$${calculation.reward.toFixed(2)} (+${xpReward} XP)`, GameConfig.UI.MESSAGE_DURATION);
                     this.game.updateBalanceDisplay();
                 }
                 
@@ -184,8 +204,28 @@ class CollisionManager {
                 const victimStake = tank2.stake || this.game.economy.getCurrentWager() || GameConfig.ECONOMY.DEFAULT_VICTIM_STAKE;
                 const calculation = this.rewardManager.giveKillReward(victimStake);
                 
-                console.log(`Killed enemy tank! Reward: $${calculation.reward.toFixed(2)}, Platform fee: $${calculation.platformFee.toFixed(2)}`);
-                this.game.showMessage(`Killed enemy! +$${calculation.reward.toFixed(2)}`, GameConfig.UI.MESSAGE_DURATION);
+                // Calculate XP reward based on level difference
+                const levelDiff = tank2.level - tank1.level;
+                let xpReward = GameConfig.XP.BASE_KILL_XP;
+                
+                // If enemy is higher level, give bonus XP
+                if (levelDiff > 0) {
+                    xpReward += levelDiff * GameConfig.XP.LEVEL_DIFF_MULTIPLIER;
+                }
+                // If enemy is lower level, reduce XP (minimum MIN_KILL_XP, never negative)
+                else if (levelDiff < 0) {
+                    // Reduce XP by 5 per level difference, but never below minimum
+                    xpReward = Math.max(GameConfig.XP.MIN_KILL_XP, GameConfig.XP.BASE_KILL_XP + (levelDiff * 5));
+                }
+                
+                // Cap XP at maximum
+                xpReward = Math.min(xpReward, GameConfig.XP.MAX_KILL_XP);
+                
+                // Give XP to player
+                tank1.addXP(xpReward);
+                
+                console.log(`Killed enemy tank! Reward: $${calculation.reward.toFixed(2)}, XP: ${xpReward}, Level diff: ${levelDiff}`);
+                this.game.showMessage(`Killed enemy! +$${calculation.reward.toFixed(2)} (+${xpReward} XP)`, GameConfig.UI.MESSAGE_DURATION);
                 this.game.updateBalanceDisplay();
             }
         }

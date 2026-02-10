@@ -107,6 +107,10 @@ const GameConfig = {
     // XP Settings
     XP: {
         BASE_XP_TO_NEXT_LEVEL: 100,
-        XP_MULTIPLIER_PER_LEVEL: 1.2       // Increase XP needed by 20% per level
+        XP_MULTIPLIER_PER_LEVEL: 1.2,      // Increase XP needed by 20% per level
+        BASE_KILL_XP: 50,                  // Base XP for killing an enemy tank
+        LEVEL_DIFF_MULTIPLIER: 10,         // Additional XP per level difference (if enemy is higher)
+        MIN_KILL_XP: 10,                   // Minimum XP for killing an enemy (even if much lower level)
+        MAX_KILL_XP: 200                   // Maximum XP from a single kill
     }
 };
