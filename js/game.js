@@ -14,6 +14,9 @@ class Game {
         this.state = 'menu'; // menu, lobby, playing
         this.lastTime = 0;
         
+        // Economy system
+        this.economy = new Economy(100); // Start with $100 Test Coins
+        
         // Game objects
         this.playerTank = null;
         this.enemyTanks = [];
@@ -61,6 +64,8 @@ class Game {
         setTimeout(() => {
             document.getElementById('loadingScreen').classList.add('hidden');
             this.showRoomSelection();
+            // Initialize balance display
+            this.updateBalanceDisplay();
         }, 1000);
     }
 
@@ -77,8 +82,32 @@ class Game {
 
     joinRoom(stake) {
         console.log(`Joining $${stake} room...`);
-        // TODO: Connect to server, validate balance, etc.
         
+        // Check if player can afford the wager
+        if (!this.economy.canAfford(stake)) {
+            alert(`Insufficient balance! You need $${stake} but only have $${this.economy.getBalance()}`);
+            return;
+        }
+        
+        // Check if already in a match
+        if (this.economy.isInMatch()) {
+            alert('You are already in a match! Use Kill Self button to exit first.');
+            return;
+        }
+        
+        // Deduct wager
+        const wagerSuccess = this.economy.wager(stake);
+        if (!wagerSuccess) {
+            alert(`Failed to wager $${stake}. Insufficient balance.`);
+            return;
+        }
+        
+        console.log(`Wagered $${stake}. New balance: $${this.economy.getBalance()}`);
+        
+        // Update balance display
+        this.updateBalanceDisplay();
+        
+        // TODO: Connect to server, validate balance, etc.
         // For now, start local game
         this.startGame();
     }
@@ -170,11 +199,67 @@ class Game {
     killSelf() {
         if (this.state === 'playing' && this.playerTank) {
             console.log('Killing self...');
+            
+            // Process kill button penalty: 10% fee, 90% refund
+            if (this.economy.isInMatch()) {
+                const refund = this.economy.refundKillButton();
+                console.log(`Kill button: Refunded $${refund.refunded.toFixed(2)}, Fee: $${refund.fee.toFixed(2)}`);
+                
+                // Show refund message
+                this.showMessage(`Exited match. Refunded: $${refund.refunded.toFixed(2)} (Fee: $${refund.fee.toFixed(2)})`, 3000);
+            }
+            
+            // Update balance display
+            this.updateBalanceDisplay();
+            
             // TODO: Send to server, remove from room
             this.playerTank = null;
             this.state = 'menu';
             document.getElementById('killButton').classList.add('hidden');
             this.showRoomSelection();
+        }
+    }
+    
+    showMessage(text, duration = 2000) {
+        // Create or get message element
+        let messageEl = document.getElementById('gameMessage');
+        if (!messageEl) {
+            messageEl = document.createElement('div');
+            messageEl.id = 'gameMessage';
+            messageEl.style.cssText = `
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: rgba(0, 0, 0, 0.9);
+                color: #fff;
+                padding: 20px 40px;
+                border-radius: 8px;
+                font-size: 18px;
+                z-index: 1000;
+                pointer-events: none;
+            `;
+            document.getElementById('uiOverlay').appendChild(messageEl);
+        }
+        
+        messageEl.textContent = text;
+        messageEl.style.display = 'block';
+        
+        setTimeout(() => {
+            messageEl.style.display = 'none';
+        }, duration);
+    }
+    
+    updateBalanceDisplay() {
+        const balanceEl = document.getElementById('balance');
+        if (balanceEl) {
+            const balance = this.economy.getBalance();
+            const wager = this.economy.getCurrentWager();
+            if (wager > 0) {
+                balanceEl.textContent = `Balance: $${balance.toFixed(2)} (Wagered: $${wager})`;
+            } else {
+                balanceEl.textContent = `Balance: $${balance.toFixed(2)}`;
+            }
         }
     }
 
@@ -230,8 +315,31 @@ class Game {
                         return false; // Remove bullet
                     }
                     
+                    // Check if player killed another tank
+                    if (isDead && this.playerTank && bullet.ownerId === this.playerTank.id && !tank.isPlayer) {
+                        // Player killed enemy tank - give reward (90% of victim's stake)
+                        // For now, use a default stake amount (in real game, get from victim's wager)
+                        const victimStake = 5; // Default for testing - TODO: get from actual victim's wager
+                        const reward = victimStake * 0.9; // 90% reward
+                        const platformFee = victimStake * 0.1; // 10% platform fee
+                        
+                        this.economy.addKillReward(reward);
+                        this.economy.recordPlatformFee(platformFee);
+                        
+                        console.log(`Killed enemy! Reward: $${reward.toFixed(2)}, Platform fee: $${platformFee.toFixed(2)}`);
+                        this.showMessage(`Killed enemy! +$${reward.toFixed(2)}`, 2000);
+                        this.updateBalanceDisplay();
+                    }
+                    
                     if (isDead && tank.isPlayer) {
-                        // Player died
+                        // Player died - lose entire stake (no refund)
+                        if (this.economy.isInMatch()) {
+                            const lostWager = this.economy.getCurrentWager();
+                            this.economy.currentWager = 0; // Clear wager (player lost it all)
+                            console.log(`Player died! Lost entire wager: $${lostWager}`);
+                            this.showMessage(`You died! Lost $${lostWager}`, 3000);
+                            this.updateBalanceDisplay();
+                        }
                         this.killSelf();
                     }
                     break;
@@ -251,6 +359,7 @@ class Game {
                     if (result.killed && result.attackerId && this.playerTank && result.attackerId === this.playerTank.id) {
                         // Player killed the bot - give XP
                         this.playerTank.addXP(result.xpReward);
+                        // Note: Bot kills don't give money, only XP
                     }
                     
                     if (bullet.penetration <= 0) {
@@ -280,6 +389,14 @@ class Game {
                         bot.recordDamageToPlayer(this.playerTank.id, currentTime);
                         
                         if (isDead) {
+                            // Player died from bot collision - lose entire stake
+                            if (this.economy.isInMatch()) {
+                                const lostWager = this.economy.getCurrentWager();
+                                this.economy.currentWager = 0; // Clear wager (player lost it all)
+                                console.log(`Player died from bot! Lost entire wager: $${lostWager}`);
+                                this.showMessage(`You died! Lost $${lostWager}`, 3000);
+                                this.updateBalanceDisplay();
+                            }
                             this.killSelf();
                             break;
                         }
@@ -293,6 +410,7 @@ class Game {
                         if (result.killed && this.playerTank) {
                             // Player killed the bot - give XP
                             this.playerTank.addXP(result.xpReward);
+                            // Note: Bot kills don't give money, only XP
                         }
                     }
                 }
@@ -320,7 +438,30 @@ class Game {
                         tank1.recordBodyDamageToTarget(tank2.id, currentTime);
                         
                         if (isDead && tank2.isPlayer) {
+                            // Player (tank2) died from tank collision - lose entire stake
+                            if (this.economy.isInMatch()) {
+                                const lostWager = this.economy.getCurrentWager();
+                                this.economy.currentWager = 0; // Clear wager (player lost it all)
+                                console.log(`Player died from tank collision! Lost entire wager: $${lostWager}`);
+                                this.showMessage(`You died! Lost $${lostWager}`, 3000);
+                                this.updateBalanceDisplay();
+                            }
                             this.killSelf();
+                        }
+                        
+                        // Check if player (tank1) killed tank2 - give reward
+                        if (isDead && tank1.isPlayer && !tank2.isPlayer) {
+                            // Player killed enemy tank - give reward (90% of victim's stake)
+                            const victimStake = 5; // Default for testing - TODO: get from actual victim's wager
+                            const reward = victimStake * 0.9; // 90% reward
+                            const platformFee = victimStake * 0.1; // 10% platform fee
+                            
+                            this.economy.addKillReward(reward);
+                            this.economy.recordPlatformFee(platformFee);
+                            
+                            console.log(`Killed enemy tank! Reward: $${reward.toFixed(2)}, Platform fee: $${platformFee.toFixed(2)}`);
+                            this.showMessage(`Killed enemy! +$${reward.toFixed(2)}`, 2000);
+                            this.updateBalanceDisplay();
                         }
                     }
                     
@@ -330,6 +471,14 @@ class Game {
                         tank2.recordBodyDamageToTarget(tank1.id, currentTime);
                         
                         if (isDead && tank1.isPlayer) {
+                            // Player died from tank collision - lose entire stake
+                            if (this.economy.isInMatch()) {
+                                const lostWager = this.economy.getCurrentWager();
+                                this.economy.currentWager = 0; // Clear wager (player lost it all)
+                                console.log(`Player died from tank collision! Lost entire wager: $${lostWager}`);
+                                this.showMessage(`You died! Lost $${lostWager}`, 3000);
+                                this.updateBalanceDisplay();
+                            }
                             this.killSelf();
                         }
                     }
@@ -393,6 +542,9 @@ class Game {
                 document.getElementById('health').textContent = `Health: ${Math.floor(this.playerTank.health)}/${this.playerTank.maxHealth}`;
                 document.getElementById('xp').textContent = `XP: ${this.playerTank.xp}/${this.playerTank.xpToNextLevel}`;
             }
+            
+            // Update balance display
+            this.updateBalanceDisplay();
         }
     }
 
