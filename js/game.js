@@ -37,6 +37,10 @@ class Game {
         };
         this.loadBotSprites();
         
+        // Pellet sprite
+        this.pelletSprite = null;
+        this.loadPelletSprite();
+        
         // UI elements
         this.setupUI();
         
@@ -161,11 +165,12 @@ class Game {
     }
 
     loadBotSprites() {
-        // Load Rectangle sprite
+        // Load Rectangle sprite - using SquarePolygon.png instead of SharpRectangle.png
         const rectSprite = new Image();
-        rectSprite.src = 'assets/SharpRectangle.png';
+        rectSprite.src = 'assets/SquarePolygon.png';
         rectSprite.onload = () => {
             this.botSprites.rectangle = rectSprite;
+            console.log('Rectangle bot sprite (SquarePolygon) loaded successfully');
             // Update existing bots
             this.bots.forEach(bot => {
                 if (bot.type === 'rectangle') {
@@ -173,12 +178,16 @@ class Game {
                 }
             });
         };
+        rectSprite.onerror = () => {
+            console.error('Failed to load rectangle bot sprite from:', rectSprite.src);
+        };
 
-        // Load Triangle sprite
+        // Load Triangle sprite - using TrianglePellet.png
         const triSprite = new Image();
-        triSprite.src = 'assets/SharpTriangle.png';
+        triSprite.src = 'assets/TrianglePellet.png';
         triSprite.onload = () => {
             this.botSprites.triangle = triSprite;
+            console.log('Triangle bot sprite (TrianglePellet) loaded successfully');
             // Update existing bots
             this.bots.forEach(bot => {
                 if (bot.type === 'triangle') {
@@ -186,6 +195,29 @@ class Game {
                 }
             });
         };
+        triSprite.onerror = () => {
+            console.error('Failed to load triangle bot sprite from:', triSprite.src);
+        };
+    }
+    
+    loadPelletSprite() {
+        // No longer needed - pellets are drawn programmatically
+        // Keeping method for compatibility but it does nothing now
+    }
+    
+    /**
+     * Helper: Draw rounded rectangle for pellets
+     */
+    roundedRectPellet(ctx, x, y, width, height, radius) {
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + width - radius, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+        ctx.lineTo(x + width, y + height - radius);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        ctx.lineTo(x + radius, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
     }
 
     generateBots(count) {
@@ -372,11 +404,27 @@ class Game {
             });
 
             // Draw pellets (keep for now, can remove later)
+            // Pellets are now drawn programmatically by bots, so this can be removed if pellets array is empty
             this.pellets.forEach(pellet => {
-                this.ctx.fillStyle = pellet.color;
+                // Draw square pellet programmatically (same style as rectangle bots)
+                this.ctx.save();
+                this.ctx.translate(pellet.x, pellet.y);
+                
+                const size = pellet.size || 5;
+                const cornerRadius = size * 0.15;
+                
+                // Draw filled square with rounded corners
+                this.ctx.fillStyle = GameConfig.COLORS.BOT_RECTANGLE;
                 this.ctx.beginPath();
-                this.ctx.arc(pellet.x, pellet.y, pellet.size, 0, Math.PI * 2);
+                this.roundedRectPellet(this.ctx, -size, -size, size * 2, size * 2, cornerRadius);
                 this.ctx.fill();
+                
+                // Draw border
+                this.ctx.strokeStyle = GameConfig.COLORS.BOT_RECTANGLE_BORDER;
+                this.ctx.lineWidth = 2;
+                this.ctx.stroke();
+                
+                this.ctx.restore();
             });
 
             // Draw bullets

@@ -61,7 +61,7 @@ const GameConfig = {
             BODY_DAMAGE: 15,
             SIZE: 25,
             XP_REWARD: 100,
-            SPRITE_NAME: 'SharpTriangle'
+            SPRITE_NAME: 'TrianglePellet'
         },
         DEFAULT_SPEED: 30,
         DEFAULT_RESPAWN_TIME: 60000,       // 1 minute in milliseconds
@@ -87,8 +87,10 @@ const GameConfig = {
         ENEMY_TANK: '#e24a4a',
         PLAYER_BULLET: '#4a90e2',
         ENEMY_BULLET: '#e24a4a',
-        BOT_TRIANGLE: '#ff6b6b',
-        BOT_RECTANGLE: '#4ecdc4',
+        BOT_TRIANGLE: '#ED8A7D',            // Reddish-orange triangle fill
+        BOT_TRIANGLE_BORDER: '#BD6F6F',     // Darker red triangle border
+        BOT_RECTANGLE: '#FFD700',           // Golden yellow square fill
+        BOT_RECTANGLE_BORDER: '#D4AF37',    // Darker gold square border
         ARENA_BACKGROUND: '#16213e',
         ARENA_BORDER: '#0f3460',
         HEALTH_BAR_BG: '#333',

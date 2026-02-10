@@ -142,41 +142,90 @@ class Bot {
         ctx.save();
         ctx.translate(this.x, this.y);
 
-        // Draw bot sprite if loaded, otherwise draw simple shape
-        if (this.sprite && this.spriteLoaded) {
-            ctx.drawImage(
-                this.sprite,
-                -this.size,
-                -this.size,
-                this.size * 2,
-                this.size * 2
-            );
+        // Draw pellet programmatically (always use programmatic drawing, no sprites)
+        if (this.type === 'triangle') {
+            this.drawTrianglePellet(ctx);
         } else {
-            // Fallback: draw simple shape
-            ctx.fillStyle = this.type === 'triangle' ? GameConfig.COLORS.BOT_TRIANGLE : GameConfig.COLORS.BOT_RECTANGLE;
-            ctx.beginPath();
-            
-            if (this.type === 'triangle') {
-                // Draw triangle
-                ctx.moveTo(0, -this.size);
-                ctx.lineTo(-this.size, this.size);
-                ctx.lineTo(this.size, this.size);
-                ctx.closePath();
-            } else {
-                // Draw rectangle
-                ctx.fillRect(-this.size, -this.size, this.size * 2, this.size * 2);
-            }
-            
-            ctx.fill();
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 2;
-            ctx.stroke();
+            this.drawSquarePellet(ctx);
         }
 
         ctx.restore();
 
         // Draw health bar
         this.drawHealthBar(ctx);
+    }
+    
+    /**
+     * Draw a square pellet (like SquarePolygon.png)
+     * Golden yellow square with darker border and rounded corners
+     */
+    drawSquarePellet(ctx) {
+        const size = this.size;
+        const cornerRadius = size * 0.15; // Rounded corners
+        
+        // Draw filled square with rounded corners
+        ctx.fillStyle = GameConfig.COLORS.BOT_RECTANGLE;
+        ctx.beginPath();
+        this.roundedRect(ctx, -size, -size, size * 2, size * 2, cornerRadius);
+        ctx.fill();
+        
+        // Draw border
+        ctx.strokeStyle = GameConfig.COLORS.BOT_RECTANGLE_BORDER;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+    
+    /**
+     * Draw a triangle pellet (like TrianglePellet.png)
+     * Reddish-orange triangle with darker border and rounded corners
+     * Triangle points to the right
+     */
+    drawTrianglePellet(ctx) {
+        const size = this.size;
+        const cornerRadius = size * 0.12; // Rounded corner radius
+        
+        // Triangle pointing right: apex on right, base on left (vertical)
+        const apexX = size * 0.9;   // Right point (apex)
+        const apexY = 0;
+        const topX = -size * 0.8;   // Top-left corner
+        const topY = -size;
+        const bottomX = -size * 0.8; // Bottom-left corner
+        const bottomY = size;
+        
+        ctx.fillStyle = GameConfig.COLORS.BOT_TRIANGLE;
+        ctx.beginPath();
+        
+        // Draw triangle with rounded corners
+        // Start from top-left, going clockwise
+        ctx.moveTo(topX, topY + cornerRadius);
+        ctx.quadraticCurveTo(topX, topY, topX + cornerRadius, topY);
+        ctx.lineTo(apexX - cornerRadius, apexY - cornerRadius);
+        ctx.quadraticCurveTo(apexX, apexY, apexX - cornerRadius, apexY + cornerRadius);
+        ctx.lineTo(bottomX + cornerRadius, bottomY);
+        ctx.quadraticCurveTo(bottomX, bottomY, bottomX, bottomY - cornerRadius);
+        ctx.closePath();
+        
+        ctx.fill();
+        
+        // Draw border
+        ctx.strokeStyle = GameConfig.COLORS.BOT_TRIANGLE_BORDER;
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+    }
+    
+    /**
+     * Helper: Draw rounded rectangle
+     */
+    roundedRect(ctx, x, y, width, height, radius) {
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + width - radius, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+        ctx.lineTo(x + width, y + height - radius);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        ctx.lineTo(x + radius, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
     }
 
     drawHealthBar(ctx) {
