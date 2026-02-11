@@ -75,8 +75,8 @@ class GameServer {
             name: playerName || `Player${socket.id.slice(0, 6)}`,
             socket: socket,
             roomStake: stake,
-            x: Math.random() * (this.worldWidth - 1000) + 500, // Random spawn position
-            y: Math.random() * (this.worldHeight - 1000) + 500,
+            x: Math.random() * (this.worldWidth - 1000), // Random spawn position
+            y: Math.random() * (this.worldHeight - 1000),
             angle: 0,
             level: 1,
             health: 100,
