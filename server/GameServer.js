@@ -273,50 +273,68 @@ class GameServer {
 
     handleKillSelf(socket) {
         const player = this.players.get(socket.id);
-        if (!player || !player.roomStake) return;
+        if (!player || !player.roomStake) {
+            console.warn(`Kill self requested but player not in room: ${socket.id}`);
+            return;
+        }
+
+        console.log(`Player ${socket.id} (${player.name}) killed self`);
 
         // Process kill button penalty (10% fee, 90% refund)
         const refund = player.roomStake * 0.9;
         const fee = player.roomStake * 0.1;
+        const newBalance = player.balance + refund;
+
+        // Store room stake before removal
+        const roomStake = player.roomStake;
 
         // Remove from room
         this.removePlayerFromRoom(socket.id);
 
-        // Notify player
+        // Notify player (before disconnect, socket is still connected)
         socket.emit('killedSelf', {
             refund: refund,
             fee: fee,
-            newBalance: player.balance + refund
+            newBalance: newBalance
         });
 
-        // Broadcast to room
-        socket.to(`room_${player.roomStake}`).emit('playerLeft', {
-            playerId: socket.id
+        // Broadcast to room that player left
+        socket.to(`room_${roomStake}`).emit('playerLeft', {
+            playerId: socket.id,
+            reason: 'killed_self'
         });
+
+        console.log(`Kill self processed: Refund $${refund.toFixed(2)}, Fee $${fee.toFixed(2)}`);
     }
 
     handleDisconnect(socket) {
         const player = this.players.get(socket.id);
-        if (!player) return;
-
-        // Refund full wager on disconnect
-        if (player.roomStake) {
-            socket.emit('disconnected', {
-                refund: player.roomStake,
-                newBalance: player.balance + player.roomStake
-            });
-
-            // Remove from room
-            this.removePlayerFromRoom(socket.id);
-
-            // Broadcast to room
-            socket.to(`room_${player.roomStake}`).emit('playerLeft', {
-                playerId: socket.id
-            });
+        if (!player) {
+            console.log(`Unknown player disconnected: ${socket.id}`);
+            return;
         }
 
+        console.log(`Player disconnected: ${socket.id} (${player.name})`);
+
+        // Store room stake before removal (needed for broadcast)
+        const roomStake = player.roomStake;
+
+        // Remove from room first
+        if (roomStake) {
+            this.removePlayerFromRoom(socket.id);
+
+            // Broadcast to room that player left (socket is disconnected, so use io.to)
+            this.io.to(`room_${roomStake}`).emit('playerLeft', {
+                playerId: socket.id,
+                reason: 'disconnected'
+            });
+
+            console.log(`Broadcasted player left to room $${roomStake}`);
+        }
+
+        // Remove from players map
         this.players.delete(socket.id);
-        console.log(`Player disconnected: ${socket.id}`);
+        console.log(`Cleaned up player: ${socket.id}`);
     }
 
     createRoom(stake) {
@@ -360,18 +378,29 @@ class GameServer {
 
     removePlayerFromRoom(socketId) {
         const player = this.players.get(socketId);
-        if (!player || !player.roomStake) return;
+        if (!player || !player.roomStake) {
+            console.warn(`Cannot remove player from room: ${socketId} (no room stake)`);
+            return;
+        }
 
-        const room = this.rooms.get(player.roomStake);
+        const roomStake = player.roomStake;
+        const room = this.rooms.get(roomStake);
+        
         if (room) {
+            // Remove player from room
             room.players.delete(socketId);
             player.roomStake = null;
             player.isDead = true;
 
+            console.log(`Removed player ${socketId} from $${roomStake} room. Remaining players: ${room.players.size}`);
+
             // Clean up empty rooms
             if (room.players.size === 0) {
-                this.rooms.delete(player.roomStake);
+                this.rooms.delete(roomStake);
+                console.log(`Room $${roomStake} is now empty and has been removed`);
             }
+        } else {
+            console.warn(`Room $${roomStake} not found when trying to remove player ${socketId}`);
         }
     }
 

@@ -38,9 +38,33 @@ class NetworkManager {
         });
 
         this.socket.on('disconnect', () => {
-            console.log('Disconnected from server');
+            console.log('⚠️ Disconnected from server');
             this.connected = false;
+
+            // If we were in a game, handle disconnect
+            if (this.game.state === 'playing' && this.playerId) {
+                console.log('Handling disconnect during gameplay...');
+                
+                // Refund wager if in match (client-side fallback)
+                if (this.game.economy.isInMatch()) {
+                    const wager = this.game.economy.getCurrentWager();
+                    this.game.economy.refundWager(wager);
+                    this.game.updateBalanceDisplay();
+                    this.game.showMessage(
+                        `Disconnected. Refunded: $${wager.toFixed(2)}`,
+                        GameConfig.UI.MESSAGE_DURATION_LONG
+                    );
+                }
+
+                // Clean up and exit
+                this.cleanupGameState();
+                this.exitToMenu('Connection lost');
+            }
+
+            // Clear server players
             this.serverPlayers.clear();
+            this.playerId = null;
+            this.roomStake = null;
         });
 
         // Room events
@@ -125,7 +149,12 @@ class NetworkManager {
 
     sendPlayerInput(keys, mouseX, mouseY, shooting) {
         if (!this.connected || !this.playerId) {
-            console.warn('Cannot send input: not connected or no playerId');
+            // Silently skip if not connected (prevents console spam)
+            return;
+        }
+        
+        // Don't send input if we're not in a game
+        if (this.game.state !== 'playing') {
             return;
         }
 
@@ -153,8 +182,17 @@ class NetworkManager {
     }
 
     sendKillSelf() {
-        if (!this.connected || !this.playerId) return;
+        if (!this.connected) {
+            console.error('Cannot send kill self: not connected to server');
+            return;
+        }
+        
+        if (!this.playerId) {
+            console.warn('Cannot send kill self: no player ID');
+            return;
+        }
 
+        console.log('📤 Sending kill self request to server...');
         this.socket.emit('killSelf');
     }
 
@@ -188,12 +226,18 @@ class NetworkManager {
 
     handlePlayerLeft(data) {
         const playerId = data.playerId;
+        const reason = data.reason || 'unknown';
         const tank = this.serverPlayers.get(playerId);
+        
+        console.log(`👋 Player left: ${playerId} (reason: ${reason})`);
         
         if (tank) {
             // Remove from enemy tanks
             this.game.enemyTanks = this.game.enemyTanks.filter(t => t !== tank);
             this.serverPlayers.delete(playerId);
+            console.log(`Removed player tank from game: ${playerId}`);
+        } else {
+            console.warn(`Player left but tank not found: ${playerId}`);
         }
     }
 
@@ -287,33 +331,47 @@ class NetworkManager {
     }
 
     handleKilledSelf(data) {
+        console.log('✅ Kill self confirmed by server:', data);
+
         // Update balance
         this.game.economy.setBalance(data.newBalance);
+        this.game.economy.currentWager = 0; // Clear wager
         this.game.updateBalanceDisplay();
 
-        // Exit game
-        this.game.playerTank = null;
-        this.game.state = 'menu';
-        document.getElementById('killButton').classList.add('hidden');
-        this.game.showRoomSelection();
+        // Show message
+        this.game.showMessage(
+            `Exited match. Refunded: $${data.refund.toFixed(2)} (Fee: $${data.fee.toFixed(2)})`,
+            GameConfig.UI.MESSAGE_DURATION_LONG
+        );
 
+        // Clean up game state (remove enemy tanks, clear bullets, etc.)
+        this.cleanupGameState();
+
+        // Exit to menu
+        this.exitToMenu();
+
+        // Clear network state
         this.playerId = null;
         this.roomStake = null;
+        
+        console.log('✅ Kill self complete - returned to menu');
     }
 
     handleDisconnected(data) {
-        // Full refund on disconnect
-        this.game.economy.setBalance(data.newBalance);
-        this.game.updateBalanceDisplay();
+        // Note: This handler may not be called if socket is already disconnected
+        // The socket 'disconnect' event handler below handles this case
+        console.log('⚠️ Disconnected event received:', data);
+        
+        if (data) {
+            // Update balance if data provided
+            this.game.economy.setBalance(data.newBalance);
+            this.game.economy.currentWager = 0; // Clear wager
+            this.game.updateBalanceDisplay();
+        }
 
-        // Exit game
-        this.game.playerTank = null;
-        this.game.state = 'menu';
-        document.getElementById('killButton').classList.add('hidden');
-        this.game.showRoomSelection();
-
-        this.playerId = null;
-        this.roomStake = null;
+        // Clean up and exit
+        this.cleanupGameState();
+        this.exitToMenu('Disconnected from server');
     }
 
     createServerPlayer(playerId, playerData) {
@@ -341,6 +399,41 @@ class NetworkManager {
 
         this.serverPlayers.set(playerId, tank);
         this.game.enemyTanks.push(tank);
+    }
+
+    cleanupGameState() {
+        // Clear all enemy tanks
+        this.game.enemyTanks = [];
+        this.serverPlayers.clear();
+        
+        // Clear bullets from other players (keep own bullets briefly for visual)
+        this.game.bullets = this.game.bullets.filter(bullet => {
+            // Remove bullets from disconnected players
+            return !bullet.ownerId || bullet.ownerId === this.playerId;
+        });
+        
+        console.log('🧹 Cleaned up game state');
+    }
+
+    exitToMenu(message) {
+        // Exit game
+        this.game.playerTank = null;
+        this.game.state = 'menu';
+        
+        // Hide kill button
+        const killButton = document.getElementById('killButton');
+        if (killButton) {
+            killButton.classList.add('hidden');
+        }
+        
+        // Show room selection
+        this.game.showRoomSelection();
+        
+        // Show message if provided
+        if (message) {
+            this.game.showMessage(message, GameConfig.UI.MESSAGE_DURATION_LONG);
+            console.log(`Exit to menu: ${message}`);
+        }
     }
 
     isConnected() {

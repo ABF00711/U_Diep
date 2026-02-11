@@ -250,13 +250,16 @@ class Game {
 
     killSelf() {
         if (this.state === 'playing' && this.playerTank) {
-            console.log('Killing self...');
+            console.log('🔴 Kill self requested...');
             
-            // Send to server
+            // Send to server and wait for confirmation
             if (this.networkManager.isConnected()) {
+                // Server will handle cleanup and send 'killedSelf' event
                 this.networkManager.sendKillSelf();
+                // Don't clean up here - wait for server confirmation via handleKilledSelf
             } else {
                 // Fallback for offline mode
+                console.warn('Not connected to server, using offline mode');
                 if (this.economy.isInMatch()) {
                     this.deathHandler.handleKillButtonExit();
                 }
@@ -265,6 +268,8 @@ class Game {
                 document.getElementById('killButton').classList.add('hidden');
                 this.showRoomSelection();
             }
+        } else {
+            console.warn('Cannot kill self: not in playing state or no player tank');
         }
     }
     
@@ -362,10 +367,14 @@ class Game {
             // The server will broadcast bullets back to us via NetworkManager
         }
 
-        // Update enemy tanks and remove dead ones
+        // Update enemy tanks and remove dead/disconnected ones
         this.enemyTanks = this.enemyTanks.filter(tank => {
             if (!tank || tank.isDead) return false; // Remove dead tanks
-            tank.update(deltaTime, null, this.canvas.width, this.canvas.height);
+            
+            // Only update if we're connected and in playing state
+            if (this.networkManager.isConnected() && this.state === 'playing') {
+                tank.update(deltaTime, null, this.canvas.width, this.canvas.height);
+            }
             return true; // Keep alive tanks
         });
 
