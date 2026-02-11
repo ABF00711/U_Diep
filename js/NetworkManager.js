@@ -9,6 +9,10 @@ class NetworkManager {
         this.serverPlayers = new Map(); // Map<playerId, Tank>
         this.serverBullets = new Map(); // Map<bulletId, Bullet>
         
+        // Throttle input sending to reduce network traffic
+        this.lastInputSendTime = 0;
+        this.inputSendInterval = 16; // Send input every ~16ms (60fps)
+        
         this.connect();
     }
 
@@ -29,7 +33,7 @@ class NetworkManager {
         this.socket = io(serverUrl);
 
         this.socket.on('connect', () => {
-            console.log('Connected to server:', this.socket.id);
+            console.log('✅ Connected to server:', this.socket.id);
             this.connected = true;
         });
 
@@ -110,7 +114,17 @@ class NetworkManager {
     }
 
     sendPlayerInput(keys, mouseX, mouseY, shooting) {
-        if (!this.connected || !this.playerId) return;
+        if (!this.connected || !this.playerId) {
+            console.warn('Cannot send input: not connected or no playerId');
+            return;
+        }
+
+        // Throttle input sending
+        const now = Date.now();
+        if (now - this.lastInputSendTime < this.inputSendInterval) {
+            return; // Skip this frame
+        }
+        this.lastInputSendTime = now;
 
         this.socket.emit('playerInput', {
             keys: keys,
@@ -135,7 +149,7 @@ class NetworkManager {
     }
 
     handleJoinedRoom(data) {
-        console.log('Joined room:', data);
+        console.log('✅ Joined room:', data);
         this.playerId = data.playerId;
         this.roomStake = data.stake;
 
@@ -174,17 +188,20 @@ class NetworkManager {
     }
 
     handleGameState(data) {
+        // Debug: Log game state updates (occasionally)
+        if (Math.random() < 0.01) { // 1% chance
+            console.log('📡 Game state update:', data.players.length, 'players');
+        }
+        
         // Update server players' positions
         data.players.forEach(playerData => {
             if (playerData.playerId === this.playerId) {
                 // Update local player position from server (authoritative)
-                // Server position is authoritative, but we can interpolate for smoothness
+                // Use direct position updates for responsiveness
                 if (this.game.playerTank) {
-                    const targetX = playerData.x;
-                    const targetY = playerData.y;
-                    const lerp = 0.3; // Lerp factor for smooth movement
-                    this.game.playerTank.x += (targetX - this.game.playerTank.x) * lerp;
-                    this.game.playerTank.y += (targetY - this.game.playerTank.y) * lerp;
+                    // Direct update for immediate response (server is authoritative)
+                    this.game.playerTank.x = playerData.x;
+                    this.game.playerTank.y = playerData.y;
                     this.game.playerTank.angle = playerData.angle;
                     this.game.playerTank.level = playerData.level;
                     this.game.playerTank.health = playerData.health;
@@ -194,8 +211,8 @@ class NetworkManager {
                 // Update enemy player
                 const tank = this.serverPlayers.get(playerData.playerId);
                 if (tank) {
-                    // Interpolate for smooth movement
-                    const lerp = 0.3;
+                    // Interpolate for smooth movement of other players
+                    const lerp = 0.5; // Higher lerp for smoother enemy movement
                     tank.x += (playerData.x - tank.x) * lerp;
                     tank.y += (playerData.y - tank.y) * lerp;
                     tank.angle = playerData.angle;
@@ -208,25 +225,48 @@ class NetworkManager {
     }
 
     handleBulletFired(data) {
-        // Create bullet from server data (only if not owned by us)
-        if (data.ownerId === this.playerId) return; // Our bullets are handled locally
-
-        const ownerTank = this.serverPlayers.get(data.ownerId);
+        // Create bullet from server data
+        // If it's our bullet, we might already have it locally, but server is authoritative
+        // If it's another player's bullet, create it
+        
+        let ownerTank;
+        if (data.ownerId === this.playerId) {
+            ownerTank = this.game.playerTank;
+        } else {
+            ownerTank = this.serverPlayers.get(data.ownerId);
+        }
+        
         if (!ownerTank) return;
 
+        // Check if bullet already exists (for our own bullets)
+        const existingBullet = this.game.bullets.find(b => b.id === data.bulletId);
+        if (existingBullet) {
+            // Update existing bullet position from server
+            existingBullet.x = data.x;
+            existingBullet.y = data.y;
+            return;
+        }
+
+        // Create new bullet
         const bullet = new Bullet(
             data.x,
             data.y,
             data.angle,
+            data.speed,
             {
-                speed: data.speed,
-                damage: data.damage,
                 size: data.size,
+                damage: data.damage,
                 penetration: data.penetration,
-                color: GameConfig.COLORS.ENEMY_BULLET,
-                owner: ownerTank
+                color: data.ownerId === this.playerId ? GameConfig.COLORS.PLAYER_BULLET : GameConfig.COLORS.ENEMY_BULLET,
+                ownerId: data.ownerId,
+                isPlayer: data.ownerId === this.playerId
             }
         );
+        
+        // Set bullet ID for tracking (if Bullet class supports it)
+        if (bullet.id === undefined) {
+            bullet.id = data.bulletId;
+        }
 
         this.game.bullets.push(bullet);
     }

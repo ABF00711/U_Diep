@@ -324,7 +324,7 @@ class Game {
             // Send input to server
             if (this.networkManager.isConnected()) {
                 const mousePos = this.input.getMousePosition();
-                // Send mouse position relative to player (world coordinates)
+                // Convert canvas coordinates to world coordinates (relative to player position)
                 // For now, assuming no camera/viewport - mouse position is world position
                 const worldMouseX = mousePos.x;
                 const worldMouseY = mousePos.y;
@@ -344,12 +344,17 @@ class Game {
                     worldMouseY,
                     this.input.isMouseDown() && this.playerTank.canShoot()
                 );
+                
+                // Don't update locally when connected - server is authoritative
+                // Only update angle for visual feedback
+                const mouse = this.input.getMousePosition();
+                this.playerTank.angle = Math.atan2(mouse.y - this.playerTank.y, mouse.x - this.playerTank.x);
+            } else {
+                // Update locally when not connected (offline mode)
+                this.playerTank.update(deltaTime, this.input, this.canvas.width, this.canvas.height);
             }
             
-            // Update locally for smooth rendering
-            this.playerTank.update(deltaTime, this.input, this.canvas.width, this.canvas.height);
-            
-            // Shooting (create bullet locally, server will broadcast to others)
+            // Shooting (create bullet locally for own bullets, server will broadcast to others)
             if (this.input.isMouseDown() && this.playerTank.canShoot()) {
                 const bullet = this.playerTank.shoot();
                 if (bullet) {

@@ -163,26 +163,36 @@ class GameServer {
         if (!player || player.isDead) return;
 
         const { keys, mouseX, mouseY, shooting } = data;
+        
+        // Debug: Log input received (only occasionally to avoid spam)
+        if (Math.random() < 0.01) { // 1% chance
+            console.log(`Input from ${socket.id}:`, { keys, shooting });
+        }
 
         // Update player position based on input
-        const speed = 200 + (player.stats.movementSpeed * 20); // Base speed + stat bonus
-        const moveSpeed = speed * 0.016; // Approximate frame time (60fps)
+        const speed = 200 + (player.stats.movementSpeed * 20); // Base speed + stat bonus (pixels per second)
+        const deltaTime = 0.016; // ~60fps (16.67ms per frame)
+        const moveSpeed = speed * deltaTime; // Pixels per frame
 
         let newX = player.x;
         let newY = player.y;
 
-        if (keys.w || keys.ArrowUp) {
-            newY -= moveSpeed;
+        // Normalize diagonal movement
+        let dx = 0;
+        let dy = 0;
+        if (keys.w || keys.ArrowUp) dy -= 1;
+        if (keys.s || keys.ArrowDown) dy += 1;
+        if (keys.a || keys.ArrowLeft) dx -= 1;
+        if (keys.d || keys.ArrowRight) dx += 1;
+        
+        // Normalize diagonal movement
+        if (dx !== 0 && dy !== 0) {
+            dx *= 0.707; // 1/sqrt(2)
+            dy *= 0.707;
         }
-        if (keys.s || keys.ArrowDown) {
-            newY += moveSpeed;
-        }
-        if (keys.a || keys.ArrowLeft) {
-            newX -= moveSpeed;
-        }
-        if (keys.d || keys.ArrowRight) {
-            newX += moveSpeed;
-        }
+        
+        newX += dx * moveSpeed;
+        newY += dy * moveSpeed;
 
         // Clamp to world bounds
         const tankSize = 30; // Default tank size
@@ -201,10 +211,10 @@ class GameServer {
             const bullet = this.createBullet(player);
             player.lastShotTime = Date.now();
 
-            // Broadcast bullet to room
+            // Broadcast bullet to room (including shooter for consistency)
             const room = this.rooms.get(player.roomStake);
             if (room) {
-                socket.to(`room_${player.roomStake}`).emit('bulletFired', {
+                this.io.to(`room_${player.roomStake}`).emit('bulletFired', {
                     bulletId: bullet.id,
                     x: bullet.x,
                     y: bullet.y,
