@@ -47,7 +47,7 @@ class GameServer {
     }
 
     handleJoinRoom(socket, data) {
-        const { stake, playerName, balance } = data;
+        const { stake, playerName, balance, canvasWidth, canvasHeight } = data;
 
         // Validate stake
         if (![1, 5, 10].includes(stake)) {
@@ -69,14 +69,28 @@ class GameServer {
             this.rooms.set(stake, room);
         }
 
+        // Use canvas dimensions for spawning (default to reasonable browser size if not provided)
+        const spawnWidth = canvasWidth || 1920;
+        const spawnHeight = canvasHeight || 1080;
+        const tankSize = 30;
+        
+        // Spawn within visible canvas bounds (with margin from edges)
+        const margin = 100;
+        const minX = margin + tankSize;
+        const maxX = Math.max(spawnWidth - margin - tankSize, minX + 100);
+        const minY = margin + tankSize;
+        const maxY = Math.max(spawnHeight - margin - tankSize, minY + 100);
+        
         // Create player
         const player = {
             id: socket.id,
             name: playerName || `Player${socket.id.slice(0, 6)}`,
             socket: socket,
             roomStake: stake,
-            x: Math.random() * (this.worldWidth - 1000), // Random spawn position
-            y: Math.random() * (this.worldHeight - 1000),
+            x: minX + Math.random() * (maxX - minX), // Random spawn within visible canvas
+            y: minY + Math.random() * (maxY - minY),
+            canvasWidth: spawnWidth, // Store canvas size for movement bounds
+            canvasHeight: spawnHeight,
             angle: 0,
             level: 1,
             health: 100,
@@ -163,11 +177,6 @@ class GameServer {
         if (!player || player.isDead) return;
 
         const { keys, mouseX, mouseY, shooting } = data;
-        
-        // Debug: Log input received (only occasionally to avoid spam)
-        if (Math.random() < 0.01) { // 1% chance
-            console.log(`Input from ${socket.id}:`, { keys, shooting });
-        }
 
         // Update player position based on input
         const speed = 200 + (player.stats.movementSpeed * 20); // Base speed + stat bonus (pixels per second)
@@ -194,10 +203,12 @@ class GameServer {
         newX += dx * moveSpeed;
         newY += dy * moveSpeed;
 
-        // Clamp to world bounds
+        // Clamp to canvas bounds (not world bounds) - use player's canvas size or default
         const tankSize = 30; // Default tank size
-        player.x = Math.max(tankSize, Math.min(this.worldWidth - tankSize, newX));
-        player.y = Math.max(tankSize, Math.min(this.worldHeight - tankSize, newY));
+        const canvasWidth = player.canvasWidth || 1920;
+        const canvasHeight = player.canvasHeight || 1080;
+        player.x = Math.max(tankSize, Math.min(canvasWidth - tankSize, newX));
+        player.y = Math.max(tankSize, Math.min(canvasHeight - tankSize, newY));
 
         // Update angle (aim direction)
         if (mouseX !== undefined && mouseY !== undefined) {

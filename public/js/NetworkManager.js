@@ -104,10 +104,20 @@ class NetworkManager {
             return false;
         }
 
+        // Get canvas dimensions to send to server for proper spawning
+        // Ensure canvas is resized before getting dimensions
+        if (this.game.canvas.width === 0 || this.game.canvas.height === 0) {
+            this.game.resizeCanvas();
+        }
+        const canvasWidth = this.game.canvas.width || window.innerWidth;
+        const canvasHeight = this.game.canvas.height || window.innerHeight;
+
         this.socket.emit('joinRoom', {
             stake: stake,
             playerName: playerName || 'Player',
-            balance: balance
+            balance: balance,
+            canvasWidth: canvasWidth,
+            canvasHeight: canvasHeight
         });
 
         return true;
