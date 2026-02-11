@@ -74,8 +74,8 @@ const GameConfig = {
 
     // Game Settings
     GAME: {
-        DEFAULT_BOT_COUNT: 15,
-        DEFAULT_ENEMY_TANK_COUNT: 3,
+        DEFAULT_BOT_COUNT: 20,
+        DEFAULT_ENEMY_TANK_COUNT: 5,
         MAX_DELTA_TIME: 0.1,               // Cap deltaTime to prevent large jumps
         CANVAS_MIN_WIDTH: 800,
         CANVAS_MIN_HEIGHT: 600,

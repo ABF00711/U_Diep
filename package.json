@@ -1,0 +1,21 @@
+{
+  "name": "u-diep",
+  "version": "1.0.0",
+  "description": "Skill-Based PvP Tank Battle with Betting System",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "game",
+    "tank",
+    "pvp",
+    "multiplayer"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.22.1"
+  }
+}
