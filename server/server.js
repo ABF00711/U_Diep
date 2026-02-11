@@ -42,7 +42,7 @@ server.listen(PORT, '0.0.0.0', () => {
 // Get local IP address
 function getLocalIP() {
     const os = require('os');
-    const interfaces = os.networkInterfaces();w
+    const interfaces = os.networkInterfaces();
     
     for (const name of Object.keys(interfaces)) {
         for (const iface of interfaces[name]) {
