@@ -2,10 +2,6 @@
 
 class Bullet {
     constructor(x, y, angle, speed, options = {}) {
-        // Spawn position (starting point for range calculation)
-        this.spawnX = x;
-        this.spawnY = y;
-        
         // Current position
         this.x = x;
         this.y = y;
@@ -17,8 +13,7 @@ class Bullet {
         this.penetration = options.penetration || 1;
         this.ownerId = options.ownerId || null;
         this.isPlayer = options.isPlayer || false;
-        this.lifetime = options.lifetime || 5000; // 5 seconds max
-        this.maxRange = options.maxRange || GameConfig.BULLET.BASE_MAX_RANGE;
+        this.lifetime = options.lifetime || GameConfig.BULLET.DEFAULT_LIFETIME; // Lifetime acts as range (higher speed = further distance)
         this.age = 0;
         
         // Track targets already hit this frame to prevent multiple hits on same target
@@ -78,14 +73,5 @@ class Bullet {
 
     isExpired() {
         return this.age >= this.lifetime;
-    }
-    
-    /**
-     * Check if bullet has exceeded maximum range
-     * @returns {boolean} - True if bullet traveled beyond max range
-     */
-    isOutOfRange() {
-        const distanceTraveled = getDistance(this.spawnX, this.spawnY, this.x, this.y);
-        return distanceTraveled >= this.maxRange;
     }
 }

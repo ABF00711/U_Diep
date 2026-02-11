@@ -344,10 +344,9 @@ class Game {
         this.bullets = this.bullets.filter(bullet => {
             bullet.update(deltaTime);
             
-            // Remove if out of bounds, expired, or exceeded max range
+            // Remove if out of bounds or expired (lifetime acts as range)
             if (bullet.isOutOfBounds(this.canvas.width, this.canvas.height) || 
-                bullet.isExpired() || 
-                bullet.isOutOfRange()) {
+                bullet.isExpired()) {
                 return false;
             }
             

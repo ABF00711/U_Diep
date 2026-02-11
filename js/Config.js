@@ -40,10 +40,8 @@ const GameConfig = {
         SPEED_MULTIPLIER: 50,              // Per stat point
         DAMAGE_MULTIPLIER: 2,              // Per stat point
         SIZE_MULTIPLIER: 0.5,              // Per stat point
-        DEFAULT_LIFETIME: 5000,            // milliseconds
-        DEFAULT_PENETRATION: 1,
-        BASE_MAX_RANGE: 300,              // Base maximum distance bullets can travel (in pixels)
-        RANGE_MULTIPLIER: 100               // Additional range per bulletSpeed stat point (in pixels)
+        DEFAULT_LIFETIME: 1000,            // milliseconds (1 second) - acts as range (higher speed = further distance)
+        DEFAULT_PENETRATION: 1
     },
 
     // Bot Settings
