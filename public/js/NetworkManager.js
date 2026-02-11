@@ -120,6 +120,15 @@ class NetworkManager {
         this.socket.on('disconnected', (data) => {
             this.handleDisconnected(data);
         });
+
+        // Health and death events
+        this.socket.on('playerKilled', (data) => {
+            this.handlePlayerKilled(data);
+        });
+
+        this.socket.on('playerDied', (data) => {
+            this.handlePlayerDied(data);
+        });
     }
 
     joinRoom(stake, playerName, balance) {
@@ -196,6 +205,16 @@ class NetworkManager {
         this.socket.emit('killSelf');
     }
 
+    sendPlayerDamage(targetId, damage, damageType = 'bullet') {
+        if (!this.connected || !this.playerId) return;
+        
+        this.socket.emit('playerDamage', {
+            targetId: targetId,
+            damage: damage,
+            damageType: damageType
+        });
+    }
+
     handleJoinedRoom(data) {
         console.log('✅ Joined room:', data);
         this.playerId = data.playerId;
@@ -247,19 +266,40 @@ class NetworkManager {
             console.log('📡 Game state update:', data.players.length, 'players');
         }
         
-        // Update server players' positions
+        // Update server players' positions and health (server is authoritative)
         data.players.forEach(playerData => {
             if (playerData.playerId === this.playerId) {
-                // Update local player position from server (authoritative)
-                // Use direct position updates for responsiveness
+                // Update local player from server (authoritative)
                 if (this.game.playerTank) {
                     // Direct update for immediate response (server is authoritative)
                     this.game.playerTank.x = playerData.x;
                     this.game.playerTank.y = playerData.y;
                     this.game.playerTank.angle = playerData.angle;
-                    this.game.playerTank.level = playerData.level;
+                    // Level and XP are server-authoritative
+                    this.game.playerTank.level = playerData.level || this.game.playerTank.level;
+                    if (playerData.xp !== undefined) {
+                        this.game.playerTank.xp = playerData.xp;
+                    }
+                    if (playerData.xpToNextLevel !== undefined) {
+                        this.game.playerTank.xpToNextLevel = playerData.xpToNextLevel;
+                    }
+                    // Health is server-authoritative - always use server value
+                    const oldHealth = this.game.playerTank.health;
                     this.game.playerTank.health = playerData.health;
                     this.game.playerTank.maxHealth = playerData.maxHealth;
+                    
+                    // Check if player died (health dropped to 0)
+                    // Don't handle death here - wait for server's playerDied event
+                    // This is just for visual state
+                    if (playerData.health <= 0 && oldHealth > 0 && !this.game.playerTank.isDead) {
+                        this.game.playerTank.isDead = true;
+                        // Server will send playerDied event - don't disconnect here
+                    }
+                    
+                    // Check if player was revived (shouldn't happen, but handle it)
+                    if (playerData.health > 0 && this.game.playerTank.isDead) {
+                        this.game.playerTank.isDead = false;
+                    }
                 }
             } else {
                 // Update enemy player
@@ -270,9 +310,22 @@ class NetworkManager {
                     tank.x += (playerData.x - tank.x) * lerp;
                     tank.y += (playerData.y - tank.y) * lerp;
                     tank.angle = playerData.angle;
-                    tank.level = playerData.level;
+                    tank.level = playerData.level || tank.level;
+                    // Health is server-authoritative - always use server value
+                    const oldEnemyHealth = tank.health;
                     tank.health = playerData.health;
                     tank.maxHealth = playerData.maxHealth;
+                    
+                    // Check if enemy died
+                    if (playerData.health <= 0 && oldEnemyHealth > 0 && !tank.isDead) {
+                        tank.isDead = true;
+                        console.log(`💀 Enemy player died: ${playerData.playerId}`);
+                    }
+                    
+                    // Check if enemy was revived (shouldn't happen, but handle it)
+                    if (playerData.health > 0 && tank.isDead) {
+                        tank.isDead = false;
+                    }
                 }
             }
         });
@@ -433,6 +486,79 @@ class NetworkManager {
         if (message) {
             this.game.showMessage(message, GameConfig.UI.MESSAGE_DURATION_LONG);
             console.log(`Exit to menu: ${message}`);
+        }
+    }
+
+    handlePlayerKilled(data) {
+        // We killed another player - stay in game and continue playing!
+        console.log('✅ Player killed:', data);
+        
+        // Update balance
+        if (data.reward) {
+            this.game.economy.addKillReward(data.reward);
+            this.game.updateBalanceDisplay();
+        }
+        
+        // Update XP and level (server is authoritative)
+        if (this.game.playerTank && data.xpReward !== undefined) {
+            const oldLevel = this.game.playerTank.level;
+            this.game.playerTank.xp = data.newXP;
+            this.game.playerTank.level = data.newLevel;
+            this.game.playerTank.xpToNextLevel = data.xpToNextLevel || this.game.playerTank.xpToNextLevel;
+            
+            // Check if we leveled up
+            if (data.newLevel > oldLevel) {
+                const levelDiff = data.newLevel - oldLevel;
+                this.game.playerTank.statPoints += levelDiff; // Add stat points for level ups
+                this.game.playerTank.pendingStatAllocation = true;
+            }
+            
+            // Show message
+            this.game.showMessage(
+                `Killed enemy! +$${data.reward.toFixed(2)} (+${data.xpReward} XP)`,
+                GameConfig.UI.MESSAGE_DURATION
+            );
+        }
+        
+        // IMPORTANT: Do NOT disconnect - stay in game and continue playing!
+    }
+
+    handlePlayerDied(data) {
+        // Check if this is about us or another player
+        if (data.playerId && data.playerId !== this.playerId) {
+            // Another player died - just remove them from game
+            console.log(`💀 Another player died: ${data.playerId}`);
+            this.handlePlayerLeft({ playerId: data.playerId, reason: 'died' });
+            return;
+        }
+        
+        // We died - exit room and return to menu
+        console.log('💀 We died:', data);
+        
+        if (this.game.playerTank) {
+            this.game.playerTank.isDead = true;
+            this.game.playerTank.health = 0;
+            
+            // Update balance (lost stake - stake is already lost, just clear wager tracking)
+            const lostStake = data.lostStake || this.game.economy.getCurrentWager();
+            this.game.economy.currentWager = 0; // Clear wager (stake was already lost on server)
+            
+            // Show message
+            this.game.showMessage(
+                `You died! Lost $${lostStake.toFixed(2)}`,
+                GameConfig.UI.MESSAGE_DURATION_LONG
+            );
+            this.game.updateBalanceDisplay();
+            
+            // Clean up and exit to menu
+            this.cleanupGameState();
+            this.exitToMenu();
+            
+            // Clear network state (allows rejoining)
+            this.playerId = null;
+            this.roomStake = null;
+            
+            console.log('✅ Exited room after death - can rejoin');
         }
     }
 

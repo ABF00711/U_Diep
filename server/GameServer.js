@@ -43,6 +43,11 @@ class GameServer {
             socket.on('disconnect', () => {
                 this.handleDisconnect(socket);
             });
+
+            // Player damage event (for body damage, bot collisions, etc.)
+            socket.on('playerDamage', (data) => {
+                this.handlePlayerDamage(socket, data);
+            });
         });
     }
 
@@ -61,7 +66,7 @@ class GameServer {
             socket.emit('joinRoomError', { message: 'Already in a room' });
             return;
         }
-
+        
         // Get or create room
         let room = this.rooms.get(stake);
         if (!room) {
@@ -81,42 +86,65 @@ class GameServer {
         const minY = margin + tankSize;
         const maxY = Math.max(spawnHeight - margin - tankSize, minY + 100);
         
-        // Create player
-        const player = {
-            id: socket.id,
-            name: playerName || `Player${socket.id.slice(0, 6)}`,
-            socket: socket,
-            roomStake: stake,
-            x: minX + Math.random() * (maxX - minX), // Random spawn within visible canvas
-            y: minY + Math.random() * (maxY - minY),
-            canvasWidth: spawnWidth, // Store canvas size for movement bounds
-            canvasHeight: spawnHeight,
-            angle: 0,
-            level: 1,
-            health: 100,
-            maxHealth: 100,
-            xp: 0,
-            xpToNextLevel: 100,
-            stats: {
-                maxHealth: 0,
-                reload: 0,
-                movementSpeed: 0,
-                bulletSpeed: 0,
-                bulletDamage: 0,
-                bulletPenetration: 0,
-                bulletSize: 0,
-                bodyDamage: 0
-            },
-            statPoints: 0,
-            pendingStatAllocation: false,
-            lastShotTime: 0,
-            isDead: false,
-            balance: balance || 100
-        };
+        // Reuse existing player or create new one
+        let player = existingPlayer;
+        if (player && !player.roomStake) {
+            // Player exists but was removed from room (died/disconnected) - reset for rejoin
+            player.isDead = false;
+            player.health = 100;
+            player.maxHealth = 100;
+            player.roomStake = stake;
+            player.x = minX + Math.random() * (maxX - minX);
+            player.y = minY + Math.random() * (maxY - minY);
+            player.canvasWidth = spawnWidth;
+            player.canvasHeight = spawnHeight;
+            player.angle = 0;
+            // Keep level, XP, stats, balance - they continue with progress
+            console.log(`Player ${socket.id} rejoining room $${stake} (level ${player.level})`);
+        } else if (!player) {
+            // Create new player
+            player = {
+                id: socket.id,
+                name: playerName || `Player${socket.id.slice(0, 6)}`,
+                socket: socket,
+                roomStake: stake,
+                x: minX + Math.random() * (maxX - minX),
+                y: minY + Math.random() * (maxY - minY),
+                canvasWidth: spawnWidth,
+                canvasHeight: spawnHeight,
+                angle: 0,
+                level: 1,
+                health: 100,
+                maxHealth: 100,
+                xp: 0,
+                xpToNextLevel: 100,
+                lastHealthUpdate: Date.now(),
+                stats: {
+                    maxHealth: 0,
+                    reload: 0,
+                    movementSpeed: 0,
+                    bulletSpeed: 0,
+                    bulletDamage: 0,
+                    bulletPenetration: 0,
+                    bulletSize: 0,
+                    bodyDamage: 0
+                },
+                statPoints: 0,
+                pendingStatAllocation: false,
+                lastShotTime: 0,
+                isDead: false,
+                balance: balance || 100
+            };
+        }
 
-        // Add player to room
-        room.players.set(socket.id, player);
-        this.players.set(socket.id, player);
+        // Add player to room (if not already added)
+        if (!room.players.has(socket.id)) {
+            room.players.set(socket.id, player);
+        }
+        // Ensure player is in players map
+        if (!this.players.has(socket.id)) {
+            this.players.set(socket.id, player);
+        }
         socket.join(`room_${stake}`);
 
         // Send initial game state
@@ -174,7 +202,10 @@ class GameServer {
 
     handlePlayerInput(socket, data) {
         const player = this.players.get(socket.id);
-        if (!player || player.isDead) return;
+        if (!player || player.isDead || !player.roomStake) {
+            // Player is dead or not in a room - ignore input
+            return;
+        }
 
         const { keys, mouseX, mouseY, shooting } = data;
 
@@ -229,6 +260,14 @@ class GameServer {
             // Broadcast bullet to room (including shooter for consistency)
             const room = this.rooms.get(player.roomStake);
             if (room) {
+                // Store bullet in room for collision detection
+                room.bullets.set(bullet.id, {
+                    ...bullet,
+                    hitTargets: new Set(), // Track targets hit this frame
+                    lifetime: 1000, // 1 second lifetime
+                    age: 0
+                });
+                
                 // Debug: Log occasionally (5% chance)
                 if (Math.random() < 0.05) {
                     console.log(`🔫 Player ${socket.id} fired bullet ${bullet.id}`);
@@ -342,7 +381,7 @@ class GameServer {
             stake: stake,
             players: new Map(),
             bots: [], // Server-managed bots
-            bullets: new Map(), // Server-managed bullets
+            bullets: new Map(), // Server-managed bullets (bulletId -> bullet data)
             createdAt: Date.now()
         };
     }
@@ -378,8 +417,13 @@ class GameServer {
 
     removePlayerFromRoom(socketId) {
         const player = this.players.get(socketId);
-        if (!player || !player.roomStake) {
-            console.warn(`Cannot remove player from room: ${socketId} (no room stake)`);
+        if (!player) {
+            console.warn(`Cannot remove player from room: ${socketId} (player not found)`);
+            return;
+        }
+
+        if (!player.roomStake) {
+            // Already removed from room
             return;
         }
 
@@ -389,8 +433,8 @@ class GameServer {
         if (room) {
             // Remove player from room
             room.players.delete(socketId);
-            player.roomStake = null;
-            player.isDead = true;
+            player.roomStake = null; // Clear room stake (allows rejoining)
+            player.isDead = true; // Mark as dead (prevents input processing)
 
             console.log(`Removed player ${socketId} from $${roomStake} room. Remaining players: ${room.players.size}`);
 
@@ -404,11 +448,208 @@ class GameServer {
         }
     }
 
+    handlePlayerDamage(socket, data) {
+        const { targetId, damage, damageType } = data;
+        const attacker = this.players.get(socket.id);
+        const target = this.players.get(targetId);
+        
+        if (!attacker || !target || target.isDead) {
+            console.warn(`Invalid damage event: attacker=${attacker?.id}, target=${targetId}, target exists=${!!target}`);
+            return;
+        }
+        
+        if (attacker.id === targetId) {
+            console.warn(`Player tried to damage self: ${attacker.id}`);
+            return; // Can't damage self
+        }
+        
+        // Validate players are in same room
+        if (attacker.roomStake !== target.roomStake) {
+            console.warn(`Players in different rooms: ${attacker.id} (${attacker.roomStake}) vs ${targetId} (${target.roomStake})`);
+            return;
+        }
+        
+        // Validate damage amount (prevent cheating)
+        const maxDamage = 100; // Reasonable max damage per hit
+        const validDamage = Math.min(Math.max(0, damage), maxDamage);
+        
+        // Apply damage
+        const oldHealth = target.health;
+        target.health = Math.max(0, target.health - validDamage);
+        
+        // Check if target died
+        if (target.health <= 0 && oldHealth > 0) {
+            target.health = 0;
+            target.isDead = true;
+            this.handlePlayerDeath(attacker, target);
+        }
+        
+        // Debug: Log damage (occasionally)
+        if (Math.random() < 0.1) { // 10% chance
+            console.log(`💥 ${attacker.name} damaged ${target.name}: ${validDamage} HP (${target.health}/${target.maxHealth})`);
+        }
+    }
+
+    handlePlayerDeath(killer, victim) {
+        // Store room stake before removal
+        const victimStake = victim.roomStake || 0;
+        const roomStake = victimStake;
+        
+        // Process kill rewards
+        const reward = victimStake * 0.9; // 90% to killer
+        const fee = victimStake * 0.1; // 10% platform fee
+        
+        // Update killer balance and XP (killer stays in game!)
+        if (killer && killer.id !== victim.id) {
+            killer.balance += reward;
+            
+            // Calculate XP reward
+            const levelDiff = victim.level - killer.level;
+            let xpReward = 50; // Base XP
+            if (levelDiff > 0) {
+                xpReward += levelDiff * 10;
+            } else if (levelDiff < 0) {
+                xpReward = Math.max(10, 50 + (levelDiff * 5));
+            }
+            xpReward = Math.min(xpReward, 200);
+            
+            // Update killer XP and level
+            const oldLevel = killer.level;
+            killer.xp += xpReward;
+            while (killer.xp >= killer.xpToNextLevel) {
+                killer.xp -= killer.xpToNextLevel;
+                killer.level++;
+                killer.statPoints++;
+                killer.pendingStatAllocation = true;
+                killer.xpToNextLevel = Math.floor(killer.xpToNextLevel * 1.2);
+            }
+            
+            // Notify killer (they stay in game and continue playing)
+            killer.socket.emit('playerKilled', {
+                victimId: victim.id,
+                reward: reward,
+                xpReward: xpReward,
+                newBalance: killer.balance,
+                newLevel: killer.level,
+                newXP: killer.xp,
+                xpToNextLevel: killer.xpToNextLevel,
+                statPoints: killer.statPoints
+            });
+            
+            console.log(`💰 ${killer.name} killed ${victim.name}: +$${reward.toFixed(2)}, +${xpReward} XP`);
+        }
+        
+        // Remove victim from room FIRST (before notifications)
+        // This clears their roomStake so they can rejoin
+        this.removePlayerFromRoom(victim.id);
+        
+        // Notify victim directly (they died and lost stake - must exit room)
+        victim.socket.emit('playerDied', {
+            playerId: victim.id, // Include playerId so client knows it's them
+            killerId: killer && killer.id !== victim.id ? killer.id : null,
+            lostStake: victimStake
+        });
+        
+        // Broadcast player left to room (so other players know victim left)
+        // Use playerLeft event - other players just see them leave
+        if (roomStake) {
+            victim.socket.to(`room_${roomStake}`).emit('playerLeft', {
+                playerId: victim.id,
+                reason: 'died'
+            });
+        }
+        
+        console.log(`💀 ${victim.name} was killed by ${killer && killer.id !== victim.id ? killer.name : 'unknown'} - removed from room`);
+    }
+
     startGameLoop() {
-        // Broadcast game state at 60 ticks per second
+        // Update game state and broadcast at 60 ticks per second
         setInterval(() => {
+            this.updateGameState();
             this.broadcastGameState();
         }, 1000 / 60);
+    }
+
+    updateGameState() {
+        // Update health regeneration for all players
+        this.players.forEach((player, playerId) => {
+            if (player.isDead || !player.roomStake) return;
+            
+            // Health regeneration (if stat allocated)
+            const healthRegen = player.stats.healthRegen || 0;
+            if (healthRegen > 0 && player.health < player.maxHealth) {
+                const regenAmount = healthRegen * (1/60); // Per frame (60fps)
+                player.health = Math.min(player.maxHealth, player.health + regenAmount);
+            }
+        });
+
+        // Update bullets and check collisions
+        this.rooms.forEach((room, stake) => {
+            const bulletsToRemove = [];
+            
+            room.bullets.forEach((bullet, bulletId) => {
+                // Update bullet position
+                const deltaTime = 1/60; // 60fps
+                bullet.x += Math.cos(bullet.angle) * bullet.speed * deltaTime;
+                bullet.y += Math.sin(bullet.angle) * bullet.speed * deltaTime;
+                bullet.age += deltaTime * 1000; // Convert to milliseconds
+                
+                // Clear hit targets from previous frame
+                bullet.hitTargets.clear();
+                
+                // Check if bullet expired or out of bounds
+                const maxX = 5000; // World bounds
+                const maxY = 5000;
+                if (bullet.age >= bullet.lifetime || 
+                    bullet.x < -bullet.size || bullet.x > maxX + bullet.size ||
+                    bullet.y < -bullet.size || bullet.y > maxY + bullet.size) {
+                    bulletsToRemove.push(bulletId);
+                    return;
+                }
+                
+                // Check collision with players
+                room.players.forEach((targetPlayer, targetId) => {
+                    if (targetPlayer.isDead || targetPlayer.id === bullet.ownerId) return;
+                    if (bullet.hitTargets.has(targetId)) return; // Already hit this frame
+                    
+                    const distance = Math.sqrt(
+                        Math.pow(bullet.x - targetPlayer.x, 2) + 
+                        Math.pow(bullet.y - targetPlayer.y, 2)
+                    );
+                    const tankSize = 30;
+                    
+                    if (distance < tankSize + bullet.size) {
+                        // Hit! Mark target as hit
+                        bullet.hitTargets.add(targetId);
+                        
+                        // Apply damage
+                        const attacker = this.players.get(bullet.ownerId);
+                        if (attacker) {
+                            const oldHealth = targetPlayer.health;
+                            targetPlayer.health = Math.max(0, targetPlayer.health - bullet.damage);
+                            
+                            // Check if target died
+                            if (targetPlayer.health <= 0 && oldHealth > 0) {
+                                targetPlayer.health = 0;
+                                targetPlayer.isDead = true;
+                                this.handlePlayerDeath(attacker, targetPlayer);
+                            }
+                        }
+                        
+                        // Decrease penetration
+                        bullet.penetration--;
+                        if (bullet.penetration <= 0) {
+                            bulletsToRemove.push(bulletId);
+                        }
+                    }
+                });
+            });
+            
+            // Remove expired/used bullets
+            bulletsToRemove.forEach(bulletId => {
+                room.bullets.delete(bulletId);
+            });
+        });
     }
 
     broadcastGameState() {
@@ -423,7 +664,9 @@ class GameServer {
                     angle: p.angle,
                     level: p.level,
                     health: p.health,
-                    maxHealth: p.maxHealth
+                    maxHealth: p.maxHealth,
+                    xp: p.xp,
+                    xpToNextLevel: p.xpToNextLevel
                 }));
 
             if (players.length > 0) {

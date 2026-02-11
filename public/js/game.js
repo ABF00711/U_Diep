@@ -106,10 +106,16 @@ class Game {
             return;
         }
         
-        // Check if already in a match
-        if (this.economy.isInMatch()) {
+        // Check if already in a match (allow rejoining if not connected)
+        if (this.economy.isInMatch() && this.networkManager.isConnected() && this.networkManager.playerId) {
             alert('You are already in a match! Use Kill Self button to exit first.');
             return;
+        }
+        
+        // If we were in a match but disconnected, clear the wager state
+        if (this.economy.isInMatch() && (!this.networkManager.isConnected() || !this.networkManager.playerId)) {
+            console.log('Clearing stale match state - allowing rejoin');
+            this.economy.currentWager = 0;
         }
         
         // Deduct wager

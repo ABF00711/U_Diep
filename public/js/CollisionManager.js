@@ -24,47 +24,28 @@ class CollisionManager {
                 // Hit! Mark this target as hit
                 bullet.markTargetHit(tank.id);
                 
-                // Apply damage
-                const isDead = tank.takeDamage(bullet.damage);
+                // Send damage event to server (server is authoritative for health)
+                if (this.game.networkManager && this.game.networkManager.isConnected()) {
+                    // Only send damage event when OUR bullet hits an enemy player
+                    // Server will handle enemy bullets hitting us via server-side collision detection
+                    if (this.game.playerTank && bullet.ownerId === this.game.playerTank.id && !tank.isPlayer) {
+                        // Our bullet hitting enemy player - send to server
+                        this.game.networkManager.sendPlayerDamage(tank.id, bullet.damage, 'bullet');
+                    }
+                    // Don't apply damage locally - wait for server update via gameState
+                } else {
+                    // Offline mode - apply damage locally
+                    const isDead = tank.takeDamage(bullet.damage);
+                    if (isDead && tank.isPlayer) {
+                        this.deathHandler.handlePlayerDeath('bullet');
+                    }
+                }
                 
                 // Decrease penetration (bullet passes through)
                 bullet.penetration--;
                 
-                // Check if player killed enemy tank
-                if (isDead && this.game.playerTank && bullet.ownerId === this.game.playerTank.id && !tank.isPlayer) {
-                    // Get actual victim's stake (or use current room stake as fallback)
-                    const victimStake = tank.stake || this.game.economy.getCurrentWager() || GameConfig.ECONOMY.DEFAULT_VICTIM_STAKE;
-                    const calculation = this.rewardManager.giveKillReward(victimStake);
-                    
-                    // Calculate XP reward based on level difference
-                    const levelDiff = tank.level - this.game.playerTank.level;
-                    let xpReward = GameConfig.XP.BASE_KILL_XP;
-                    
-                    // If enemy is higher level, give bonus XP
-                    if (levelDiff > 0) {
-                        xpReward += levelDiff * GameConfig.XP.LEVEL_DIFF_MULTIPLIER;
-                    }
-                    // If enemy is lower level, reduce XP (minimum 10 XP, never negative)
-                    else if (levelDiff < 0) {
-                        // Reduce XP by 5 per level difference, but never below minimum
-                        xpReward = Math.max(GameConfig.XP.MIN_KILL_XP, GameConfig.XP.BASE_KILL_XP + (levelDiff * 5));
-                    }
-                    
-                    // Cap XP at maximum
-                    xpReward = Math.min(xpReward, GameConfig.XP.MAX_KILL_XP);
-                    
-                    // Give XP to player
-                    this.game.playerTank.addXP(xpReward);
-                    
-                    console.log(`Killed enemy! Reward: $${calculation.reward.toFixed(2)}, XP: ${xpReward}, Level diff: ${levelDiff}`);
-                    this.game.showMessage(`Killed enemy! +$${calculation.reward.toFixed(2)} (+${xpReward} XP)`, GameConfig.UI.MESSAGE_DURATION);
-                    this.game.updateBalanceDisplay();
-                }
-                
-                // Check if player died
-                if (isDead && tank.isPlayer) {
-                    this.deathHandler.handlePlayerDeath('bullet');
-                }
+                // Server handles damage, rewards, and death - don't process here
+                // Health updates will come from server via gameState broadcasts
                 
                 // If penetration is 0, bullet should be removed (can't pass through more)
                 if (bullet.penetration <= 0) {
@@ -140,8 +121,16 @@ class CollisionManager {
                 
                 // Bot damages tank
                 if (bot.canDamagePlayer(tank.id, currentTime)) {
+                    // For bots, apply damage locally (bots are client-side for now)
+                    // TODO: Move bots to server-side for full synchronization
                     const isDead = tank.takeDamage(bot.bodyDamage);
                     bot.recordDamageToPlayer(tank.id, currentTime);
+                    
+                    // Send to server if connected (for health sync)
+                    if (this.game.networkManager && this.game.networkManager.isConnected() && tank.isPlayer) {
+                        // Server will sync health, but we apply locally for responsiveness
+                        // Health will be corrected by server in next gameState update
+                    }
                     
                     if (isDead && tank.isPlayer) {
                         this.deathHandler.handlePlayerDeath('bot');

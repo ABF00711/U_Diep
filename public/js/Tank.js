@@ -78,13 +78,19 @@ class Tank {
         this.x = clamp(this.x, this.size, canvasWidth - this.size);
         this.y = clamp(this.y, this.size, canvasHeight - this.size);
         
-        // Health regeneration
-        if (this.health < this.maxHealth && this.stats.healthRegen > 0) {
-            this.health = Math.min(
-                this.maxHealth,
-                this.health + this.stats.healthRegen * deltaTime
-            );
+        // Health regeneration (only for non-player tanks or offline mode)
+        // Server handles health regeneration for player tanks when connected
+        // For enemy tanks and offline mode, regenerate locally
+        if (!this.isPlayer) {
+            // Enemy tanks regenerate locally (server will sync via gameState)
+            if (this.health < this.maxHealth && this.stats.healthRegen > 0) {
+                this.health = Math.min(
+                    this.maxHealth,
+                    this.health + this.stats.healthRegen * deltaTime
+                );
+            }
         }
+        // Player tank regeneration is handled server-side when connected
         
         // Update reload timer
         this.lastShotTime += deltaTime * 1000;
