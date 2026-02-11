@@ -63,7 +63,7 @@ const GameConfig = {
             SPRITE_NAME: 'TrianglePellet'
         },
         DEFAULT_SPEED: 30,
-        DEFAULT_RESPAWN_TIME: 60000,       // 1 minute in milliseconds
+        DEFAULT_RESPAWN_TIME: 30000,       // 30 seconds in milliseconds
         DEFAULT_DAMAGE_COOLDOWN: 1000,     // 1 second in milliseconds
         DIRECTION_CHANGE_MIN: 2,           // seconds
         DIRECTION_CHANGE_MAX: 5,           // seconds

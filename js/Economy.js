@@ -221,6 +221,32 @@ class Economy {
     }
 
     /**
+     * Set balance directly (for server updates)
+     * @param {number} amount - New balance amount
+     */
+    setBalance(amount) {
+        this.balance = amount;
+    }
+
+    /**
+     * Refund wager (full refund, for server-side refunds)
+     * @param {number} amount - Amount to refund
+     */
+    refundWager(amount) {
+        this.balance += amount;
+        this.currentWager = 0;
+        
+        const transaction = {
+            type: 'refund',
+            amount: amount,
+            balanceAfter: this.balance,
+            timestamp: Date.now()
+        };
+        
+        this.transactionHistory.push(transaction);
+    }
+
+    /**
      * Reset economy (for testing/new game)
      */
     reset(initialBalance = GameConfig.ECONOMY.INITIAL_BALANCE) {

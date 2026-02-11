@@ -22,6 +22,7 @@ class Game {
         this.deathHandler = new DeathHandler(this);
         this.collisionManager = new CollisionManager(this);
         this.statAllocationUI = new StatAllocationUI(this);
+        this.networkManager = new NetworkManager(this);
         
         // Game objects
         this.playerTank = null;
@@ -123,9 +124,22 @@ class Game {
         // Update balance display
         this.updateBalanceDisplay();
         
-        // TODO: Connect to server, validate balance, etc.
-        // For now, start local game
-        this.startGame();
+        // Connect to server and join room
+        const joined = this.networkManager.joinRoom(
+            stake,
+            'Player',
+            this.economy.getBalance()
+        );
+        
+        if (joined) {
+            // Wait for server confirmation before starting game
+            // Game will start when 'joinedRoom' event is received
+        } else {
+            // Failed to connect - refund wager
+            this.economy.refundWager(stake);
+            this.updateBalanceDisplay();
+            alert('Failed to connect to server. Please try again.');
+        }
     }
 
     startGame() {
@@ -134,31 +148,20 @@ class Game {
         // Get current wager amount (for reward calculation)
         const currentStake = this.economy.getCurrentWager();
         
-        // Create player tank
+        // Create player tank (position will be set by server)
         this.playerTank = new Tank(
             this.canvas.width / 2,
             this.canvas.height / 2,
             {
                 color: GameConfig.COLORS.PLAYER_TANK,
                 isPlayer: true,
-                name: 'Player1',
+                name: 'Player',
                 stake: currentStake // Store player's stake
             }
         );
 
-        // Create some enemy tanks for testing
-        for (let i = 0; i < GameConfig.GAME.DEFAULT_ENEMY_TANK_COUNT; i++) {
-            this.enemyTanks.push(new Tank(
-                random(100, this.canvas.width - 100),
-                random(100, this.canvas.height - 100),
-                {
-                    color: GameConfig.COLORS.ENEMY_TANK,
-                    isPlayer: false,
-                    name: `Enemy${i + 1}`,
-                    stake: currentStake // Enemy tanks have same stake as room (for testing)
-                }
-            ));
-        }
+        // Enemy tanks will be created by NetworkManager when other players join
+        // No need to create test enemy tanks in multiplayer mode
 
         // Generate bots (replace pellets)
         this.generateBots(GameConfig.GAME.DEFAULT_BOT_COUNT);
@@ -249,16 +252,19 @@ class Game {
         if (this.state === 'playing' && this.playerTank) {
             console.log('Killing self...');
             
-            // Process kill button penalty: 10% fee, 90% refund
-            if (this.economy.isInMatch()) {
-                this.deathHandler.handleKillButtonExit();
+            // Send to server
+            if (this.networkManager.isConnected()) {
+                this.networkManager.sendKillSelf();
+            } else {
+                // Fallback for offline mode
+                if (this.economy.isInMatch()) {
+                    this.deathHandler.handleKillButtonExit();
+                }
+                this.playerTank = null;
+                this.state = 'menu';
+                document.getElementById('killButton').classList.add('hidden');
+                this.showRoomSelection();
             }
-            
-            // TODO: Send to server, remove from room
-            this.playerTank = null;
-            this.state = 'menu';
-            document.getElementById('killButton').classList.add('hidden');
-            this.showRoomSelection();
         }
     }
     
@@ -315,9 +321,35 @@ class Game {
 
         // Update player tank
         if (this.playerTank) {
+            // Send input to server
+            if (this.networkManager.isConnected()) {
+                const mousePos = this.input.getMousePosition();
+                // Send mouse position relative to player (world coordinates)
+                // For now, assuming no camera/viewport - mouse position is world position
+                const worldMouseX = mousePos.x;
+                const worldMouseY = mousePos.y;
+                
+                this.networkManager.sendPlayerInput(
+                    {
+                        w: this.input.isKeyPressed('w'),
+                        s: this.input.isKeyPressed('s'),
+                        a: this.input.isKeyPressed('a'),
+                        d: this.input.isKeyPressed('d'),
+                        ArrowUp: this.input.isKeyPressed('arrowup'),
+                        ArrowDown: this.input.isKeyPressed('arrowdown'),
+                        ArrowLeft: this.input.isKeyPressed('arrowleft'),
+                        ArrowRight: this.input.isKeyPressed('arrowright')
+                    },
+                    worldMouseX,
+                    worldMouseY,
+                    this.input.isMouseDown() && this.playerTank.canShoot()
+                );
+            }
+            
+            // Update locally for smooth rendering
             this.playerTank.update(deltaTime, this.input, this.canvas.width, this.canvas.height);
             
-            // Shooting
+            // Shooting (create bullet locally, server will broadcast to others)
             if (this.input.isMouseDown() && this.playerTank.canShoot()) {
                 const bullet = this.playerTank.shoot();
                 if (bullet) {
