@@ -329,6 +329,9 @@ class Game {
                 const worldMouseX = mousePos.x;
                 const worldMouseY = mousePos.y;
                 
+                // Send shooting state (always send mouse down state, server handles reload)
+                const isShooting = this.input.isMouseDown();
+                
                 this.networkManager.sendPlayerInput(
                     {
                         w: this.input.isKeyPressed('w'),
@@ -342,7 +345,7 @@ class Game {
                     },
                     worldMouseX,
                     worldMouseY,
-                    this.input.isMouseDown() && this.playerTank.canShoot()
+                    isShooting // Send raw mouse state, server handles reload timing
                 );
                 
                 // Don't update locally when connected - server is authoritative
@@ -354,13 +357,9 @@ class Game {
                 this.playerTank.update(deltaTime, this.input, this.canvas.width, this.canvas.height);
             }
             
-            // Shooting (create bullet locally for own bullets, server will broadcast to others)
-            if (this.input.isMouseDown() && this.playerTank.canShoot()) {
-                const bullet = this.playerTank.shoot();
-                if (bullet) {
-                    this.bullets.push(bullet);
-                }
-            }
+            // Shooting - when connected, server handles bullet creation
+            // Don't create bullets locally when connected (server is authoritative)
+            // The server will broadcast bullets back to us via NetworkManager
         }
 
         // Update enemy tanks and remove dead ones

@@ -1,12 +1,12 @@
 // HTTP server with Socket.io for multiplayer
-// Run with: node server.js
+// Run with: node server/server.js (or npm start from project root)
 // Access at: http://localhost:3000 or http://YOUR_IP:3000
 
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
-const GameServer = require('./js/GameServer.js');
+const GameServer = require('./GameServer.js');
 
 const app = express();
 const server = http.createServer(app);
@@ -19,12 +19,13 @@ const io = socketIo(server, {
 
 const PORT = process.env.PORT || 3000;
 
-// Serve static files from the project root
-app.use(express.static(__dirname));
+// Serve static files from the public directory
+const publicPath = path.join(__dirname, '..', 'public');
+app.use(express.static(publicPath));
 
 // Serve index.html for root route
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+    res.sendFile(path.join(publicPath, 'index.html'));
 });
 
 // Initialize game server
@@ -41,7 +42,7 @@ server.listen(PORT, '0.0.0.0', () => {
 // Get local IP address
 function getLocalIP() {
     const os = require('os');
-    const interfaces = os.networkInterfaces();
+    const interfaces = os.networkInterfaces();w
     
     for (const name of Object.keys(interfaces)) {
         for (const iface of interfaces[name]) {

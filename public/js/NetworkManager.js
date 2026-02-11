@@ -225,9 +225,11 @@ class NetworkManager {
     }
 
     handleBulletFired(data) {
-        // Create bullet from server data
-        // If it's our bullet, we might already have it locally, but server is authoritative
-        // If it's another player's bullet, create it
+        // Create bullet from server data (server is authoritative for all bullets)
+        // Debug: Log occasionally (10% chance)
+        if (Math.random() < 0.1) {
+            console.log('🔫 Bullet fired:', data.bulletId, 'by', data.ownerId);
+        }
         
         let ownerTank;
         if (data.ownerId === this.playerId) {
@@ -236,14 +238,18 @@ class NetworkManager {
             ownerTank = this.serverPlayers.get(data.ownerId);
         }
         
-        if (!ownerTank) return;
+        if (!ownerTank) {
+            console.warn('⚠️ Bullet owner not found:', data.ownerId);
+            return;
+        }
 
-        // Check if bullet already exists (for our own bullets)
+        // Check if bullet already exists (prevent duplicates)
         const existingBullet = this.game.bullets.find(b => b.id === data.bulletId);
         if (existingBullet) {
             // Update existing bullet position from server
             existingBullet.x = data.x;
             existingBullet.y = data.y;
+            existingBullet.angle = data.angle;
             return;
         }
 
@@ -259,14 +265,13 @@ class NetworkManager {
                 penetration: data.penetration,
                 color: data.ownerId === this.playerId ? GameConfig.COLORS.PLAYER_BULLET : GameConfig.COLORS.ENEMY_BULLET,
                 ownerId: data.ownerId,
-                isPlayer: data.ownerId === this.playerId
+                isPlayer: data.ownerId === this.playerId,
+                lifetime: GameConfig.BULLET.DEFAULT_LIFETIME
             }
         );
         
-        // Set bullet ID for tracking (if Bullet class supports it)
-        if (bullet.id === undefined) {
-            bullet.id = data.bulletId;
-        }
+        // Set bullet ID for tracking (Bullet class doesn't have id by default)
+        bullet.id = data.bulletId;
 
         this.game.bullets.push(bullet);
     }

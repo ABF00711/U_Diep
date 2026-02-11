@@ -207,13 +207,21 @@ class GameServer {
         }
 
         // Handle shooting
-        if (shooting && Date.now() - player.lastShotTime > (1000 - player.stats.reload * 100)) {
+        const currentTime = Date.now();
+        const reloadTime = Math.max(100, 1000 - (player.stats.reload * 100)); // Minimum 100ms reload
+        const canShoot = currentTime - player.lastShotTime >= reloadTime;
+        
+        if (shooting && canShoot) {
             const bullet = this.createBullet(player);
-            player.lastShotTime = Date.now();
+            player.lastShotTime = currentTime;
 
             // Broadcast bullet to room (including shooter for consistency)
             const room = this.rooms.get(player.roomStake);
             if (room) {
+                // Debug: Log occasionally (5% chance)
+                if (Math.random() < 0.05) {
+                    console.log(`🔫 Player ${socket.id} fired bullet ${bullet.id}`);
+                }
                 this.io.to(`room_${player.roomStake}`).emit('bulletFired', {
                     bulletId: bullet.id,
                     x: bullet.x,
