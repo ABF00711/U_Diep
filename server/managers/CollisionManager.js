@@ -45,10 +45,11 @@ class CollisionManager {
                         player.y -= normalY * overlap * 0.3;
                         
                         // Clamp positions
-                        const canvasWidth = player.canvasWidth || 1920;
-                        const canvasHeight = player.canvasHeight || 1080;
-                        player.x = Math.max(tankSize, Math.min(canvasWidth - tankSize, player.x));
-                        player.y = Math.max(tankSize, Math.min(canvasHeight - tankSize, player.y));
+                        // Clamp player to world bounds
+                        const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+                        const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
+                        player.x = Math.max(tankSize, Math.min(worldWidth - tankSize, player.x));
+                        player.y = Math.max(tankSize, Math.min(worldHeight - tankSize, player.y));
                     }
                     
                     // Apply body damage (bot damages player)
@@ -196,15 +197,14 @@ class CollisionManager {
                         player2.vy += normalY * squirtForce * (1/60);
                         
                         // Clamp positions
-                        const canvasWidth1 = player1.canvasWidth || 1920;
-                        const canvasHeight1 = player1.canvasHeight || 1080;
-                        const canvasWidth2 = player2.canvasWidth || 1920;
-                        const canvasHeight2 = player2.canvasHeight || 1080;
+                        // Clamp players to world bounds
+                        const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+                        const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
                         
-                        player1.x = Math.max(tankSize, Math.min(canvasWidth1 - tankSize, player1.x));
-                        player1.y = Math.max(tankSize, Math.min(canvasHeight1 - tankSize, player1.y));
-                        player2.x = Math.max(tankSize, Math.min(canvasWidth2 - tankSize, player2.x));
-                        player2.y = Math.max(tankSize, Math.min(canvasHeight2 - tankSize, player2.y));
+                        player1.x = Math.max(tankSize, Math.min(worldWidth - tankSize, player1.x));
+                        player1.y = Math.max(tankSize, Math.min(worldHeight - tankSize, player1.y));
+                        player2.x = Math.max(tankSize, Math.min(worldWidth - tankSize, player2.x));
+                        player2.y = Math.max(tankSize, Math.min(worldHeight - tankSize, player2.y));
                     }
                     
                     // Apply mutual body damage (with cooldown)

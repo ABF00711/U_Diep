@@ -6,13 +6,23 @@ class Game {
         this.ctx = this.canvas.getContext('2d');
         this.input = new Input();
         
-        // Set canvas size
-        this.resizeCanvas();
-        window.addEventListener('resize', () => this.resizeCanvas());
-        
         // Game state
         this.state = 'menu'; // menu, lobby, playing
         this.lastTime = 0;
+        
+        // Camera system (initialize before resizeCanvas)
+        this.camera = {
+            x: 0,                          // Camera position in world coordinates
+            y: 0,                          // Camera position in world coordinates
+            targetX: 0,                    // Target position (for smooth following)
+            targetY: 0,                   // Target position (for smooth following)
+            width: 0,                     // Viewport width (set in resizeCanvas)
+            height: 0                     // Viewport height (set in resizeCanvas)
+        };
+        
+        // Set canvas size (after camera is initialized)
+        this.resizeCanvas();
+        window.addEventListener('resize', () => this.resizeCanvas());
         
         // Economy system
         this.economy = new Economy(GameConfig.ECONOMY.INITIAL_BALANCE);
@@ -53,6 +63,55 @@ class Game {
         // Set canvas to fill window
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
+        
+        // Update camera viewport size
+        this.camera.width = this.canvas.width;
+        this.camera.height = this.canvas.height;
+    }
+
+    /**
+     * Convert world coordinates to screen coordinates (for rendering)
+     */
+    worldToScreen(worldX, worldY) {
+        return {
+            x: worldX - this.camera.x + this.camera.width / 2,
+            y: worldY - this.camera.y + this.camera.height / 2
+        };
+    }
+
+    /**
+     * Convert screen coordinates to world coordinates (for input)
+     */
+    screenToWorld(screenX, screenY) {
+        return {
+            x: screenX + this.camera.x - this.camera.width / 2,
+            y: screenY + this.camera.y - this.camera.height / 2
+        };
+    }
+
+    /**
+     * Update camera to follow player smoothly
+     */
+    updateCamera(deltaTime) {
+        if (!this.playerTank || this.state !== 'playing') return;
+        
+        // Set target to player position
+        this.camera.targetX = this.playerTank.x;
+        this.camera.targetY = this.playerTank.y;
+        
+        // Smoothly interpolate camera position
+        const smoothFactor = GameConfig.GAME.CAMERA_SMOOTH_FACTOR;
+        this.camera.x += (this.camera.targetX - this.camera.x) * smoothFactor;
+        this.camera.y += (this.camera.targetY - this.camera.y) * smoothFactor;
+        
+        // Clamp camera to world boundaries
+        const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+        const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
+        const halfViewportWidth = this.camera.width / 2;
+        const halfViewportHeight = this.camera.height / 2;
+        
+        this.camera.x = Math.max(halfViewportWidth, Math.min(worldWidth - halfViewportWidth, this.camera.x));
+        this.camera.y = Math.max(halfViewportHeight, Math.min(worldHeight - halfViewportHeight, this.camera.y));
     }
 
     setupUI() {
@@ -242,27 +301,52 @@ class Game {
     
     /**
      * Draw grid pattern on the arena (static grid like diep.io)
+     * Grid is drawn in world coordinates, visible based on camera position
      */
     drawGrid() {
         const gridSize = GameConfig.GAME.GRID_SIZE;
         const ctx = this.ctx;
+        const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+        const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
         
         ctx.strokeStyle = GameConfig.COLORS.GRID_LINE;
         ctx.lineWidth = 1;
         
-        // Draw vertical lines
-        for (let x = 0; x <= this.canvas.width; x += gridSize) {
+        // Calculate visible grid range based on camera position
+        const cameraLeft = this.camera.x - this.camera.width / 2;
+        const cameraRight = this.camera.x + this.camera.width / 2;
+        const cameraTop = this.camera.y - this.camera.height / 2;
+        const cameraBottom = this.camera.y + this.camera.height / 2;
+        
+        // Find first grid line before camera view (with some padding for smooth scrolling)
+        const startX = Math.floor((cameraLeft - gridSize) / gridSize) * gridSize;
+        const endX = Math.ceil((cameraRight + gridSize) / gridSize) * gridSize;
+        const startY = Math.floor((cameraTop - gridSize) / gridSize) * gridSize;
+        const endY = Math.ceil((cameraBottom + gridSize) / gridSize) * gridSize;
+        
+        // Draw vertical lines (in world space, convert to screen)
+        for (let worldX = startX; worldX <= endX; worldX += gridSize) {
+            if (worldX < 0 || worldX > worldWidth) continue;
+            
+            const screenStart = this.worldToScreen(worldX, startY);
+            const screenEnd = this.worldToScreen(worldX, endY);
+            
             ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, this.canvas.height);
+            ctx.moveTo(screenStart.x, screenStart.y);
+            ctx.lineTo(screenEnd.x, screenEnd.y);
             ctx.stroke();
         }
         
-        // Draw horizontal lines
-        for (let y = 0; y <= this.canvas.height; y += gridSize) {
+        // Draw horizontal lines (in world space, convert to screen)
+        for (let worldY = startY; worldY <= endY; worldY += gridSize) {
+            if (worldY < 0 || worldY > worldHeight) continue;
+            
+            const screenStart = this.worldToScreen(startX, worldY);
+            const screenEnd = this.worldToScreen(endX, worldY);
+            
             ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(this.canvas.width, y);
+            ctx.moveTo(screenStart.x, screenStart.y);
+            ctx.lineTo(screenEnd.x, screenEnd.y);
             ctx.stroke();
         }
     }
@@ -383,15 +467,18 @@ class Game {
             this.statAllocationUI.show();
         }
 
+        // Update camera
+        this.updateCamera(deltaTime);
+
         // Update player tank
         if (this.playerTank) {
             // Send input to server
             if (this.networkManager.isConnected()) {
                 const mousePos = this.input.getMousePosition();
-                // Convert canvas coordinates to world coordinates (relative to player position)
-                // For now, assuming no camera/viewport - mouse position is world position
-                const worldMouseX = mousePos.x;
-                const worldMouseY = mousePos.y;
+                // Convert screen coordinates to world coordinates
+                const worldMouse = this.screenToWorld(mousePos.x, mousePos.y);
+                const worldMouseX = worldMouse.x;
+                const worldMouseY = worldMouse.y;
                 
                 // Send shooting state (always send mouse down state, server handles reload)
                 const isShooting = this.input.isMouseDown();
@@ -432,7 +519,10 @@ class Game {
             
             // Only update if we're connected and in playing state
             if (this.networkManager.isConnected() && this.state === 'playing') {
-                tank.update(deltaTime, null, this.canvas.width, this.canvas.height);
+                // Enemy tanks don't need bounds check (server handles), but pass world size for consistency
+                const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+                const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
+                tank.update(deltaTime, null, worldWidth, worldHeight);
             }
             return true; // Keep alive tanks
         });
@@ -449,20 +539,25 @@ class Game {
                 return true;
             });
         } else {
-            // Offline mode - update bots locally
+            // Offline mode - update bots locally (use world bounds)
+            const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+            const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
             this.bots = this.bots.filter(bot => {
                 if (!bot) return false;
-                bot.update(deltaTime, this.canvas.width, this.canvas.height);
+                bot.update(deltaTime, worldWidth, worldHeight);
                 return true;
             });
         }
 
         // Update bullets
+        const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+        const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
         this.bullets = this.bullets.filter(bullet => {
             bullet.update(deltaTime);
             
-            // Remove if out of bounds or expired (lifetime acts as range)
-            if (bullet.isOutOfBounds(this.canvas.width, this.canvas.height) || 
+            // Remove if out of world bounds or expired (lifetime acts as range)
+            if (bullet.x < -bullet.size || bullet.x > worldWidth + bullet.size ||
+                bullet.y < -bullet.size || bullet.y > worldHeight + bullet.size ||
                 bullet.isExpired()) {
                 return false;
             }
@@ -524,6 +619,10 @@ class Game {
         this.drawGrid();
 
         if (this.state === 'playing') {
+            // Apply camera transform for all world-space rendering
+            this.ctx.save();
+            this.ctx.translate(-this.camera.x + this.camera.width / 2, -this.camera.y + this.camera.height / 2);
+            
             // Draw bots
             this.bots.forEach(bot => {
                 if (bot && !bot.isDead) {
@@ -568,9 +667,12 @@ class Game {
             });
 
             // Draw player tank
-            if (this.playerTank) {
+            if (this.playerTank && !this.playerTank.isDead) {
                 this.playerTank.draw(this.ctx);
             }
+            
+            // Restore camera transform
+            this.ctx.restore();
 
             // Update HUD
             if (this.playerTank) {

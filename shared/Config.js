@@ -81,7 +81,10 @@ const GameConfig = {
         CANVAS_MIN_WIDTH: 800,
         CANVAS_MIN_HEIGHT: 600,
         SPAWN_MARGIN: 50,                  // Margin from edges when spawning
-        GRID_SIZE: 50                      // Grid cell size in pixels (like diep.io)
+        GRID_SIZE: 50,                     // Grid cell size in pixels (like diep.io)
+        WORLD_WIDTH: 5000,                 // World width in pixels (larger than viewport)
+        WORLD_HEIGHT: 5000,                // World height in pixels (larger than viewport)
+        CAMERA_SMOOTH_FACTOR: 0.1          // Camera follow smoothness (0-1, lower = smoother)
     },
 
     // Colors

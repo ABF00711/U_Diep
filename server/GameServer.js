@@ -77,15 +77,19 @@ class GameServer {
         // Get or create room
         const room = this.roomManager.getOrCreateRoom(stake);
 
-        // Calculate spawn position
-        const spawnWidth = canvasWidth || 1920;
-        const spawnHeight = canvasHeight || 1080;
+        // Calculate spawn position in world coordinates
+        const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+        const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
         const tankSize = 30;
         const margin = 100;
         const minX = margin + tankSize;
-        const maxX = Math.max(spawnWidth - margin - tankSize, minX + 100);
+        const maxX = Math.max(worldWidth - margin - tankSize, minX + 100);
         const minY = margin + tankSize;
-        const maxY = Math.max(spawnHeight - margin - tankSize, minY + 100);
+        const maxY = Math.max(worldHeight - margin - tankSize, minY + 100);
+        
+        // Store canvas dimensions for player (used for UI/viewport, not world bounds)
+        const spawnWidth = canvasWidth || 1920;
+        const spawnHeight = canvasHeight || 1080;
         
         // Reuse existing player or create new one
         let player = existingPlayer;
@@ -250,9 +254,12 @@ class GameServer {
         // Clamp to canvas bounds
         const canvasWidth = player.canvasWidth || 1920;
         const canvasHeight = player.canvasHeight || 1080;
+        // Clamp player to world bounds
+        const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+        const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
         const tankSize = 30;
-        player.x = Math.max(tankSize, Math.min(canvasWidth - tankSize, player.x));
-        player.y = Math.max(tankSize, Math.min(canvasHeight - tankSize, player.y));
+        player.x = Math.max(tankSize, Math.min(worldWidth - tankSize, player.x));
+        player.y = Math.max(tankSize, Math.min(worldHeight - tankSize, player.y));
         
         // Update angle (aim direction)
         if (mouseX !== undefined && mouseY !== undefined) {

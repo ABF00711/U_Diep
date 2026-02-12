@@ -105,15 +105,17 @@ class Bot {
         this.x += this.vx * deltaTime;
         this.y += this.vy * deltaTime;
         
-        // Keep bot within bounds
-        this.x = clamp(this.x, this.size, canvasWidth - this.size);
-        this.y = clamp(this.y, this.size, canvasHeight - this.size);
+        // Keep bot within world bounds (use world size from config)
+        const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+        const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
+        this.x = clamp(this.x, this.size, worldWidth - this.size);
+        this.y = clamp(this.y, this.size, worldHeight - this.size);
         
         // Reset velocity if bot hits boundary (bounce effect)
-        if (this.x <= this.size || this.x >= canvasWidth - this.size) {
+        if (this.x <= this.size || this.x >= worldWidth - this.size) {
             this.vx *= -0.5; // Reverse and dampen
         }
-        if (this.y <= this.size || this.y >= canvasHeight - this.size) {
+        if (this.y <= this.size || this.y >= worldHeight - this.size) {
             this.vy *= -0.5; // Reverse and dampen
         }
     }
@@ -144,14 +146,12 @@ class Bot {
     }
 
     respawn(canvasWidth, canvasHeight) {
-        // Ensure valid canvas dimensions
-        canvasWidth = Math.max(canvasWidth || GameConfig.GAME.CANVAS_MIN_WIDTH, GameConfig.GAME.CANVAS_MIN_WIDTH);
-        canvasHeight = Math.max(canvasHeight || GameConfig.GAME.CANVAS_MIN_HEIGHT, GameConfig.GAME.CANVAS_MIN_HEIGHT);
-        
-        // Respawn at random location
+        // Respawn at random location in world (use world bounds)
+        const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+        const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
         const margin = GameConfig.GAME.SPAWN_MARGIN;
-        this.x = random(this.size + margin, canvasWidth - this.size - margin);
-        this.y = random(this.size + margin, canvasHeight - this.size - margin);
+        this.x = random(this.size + margin, worldWidth - this.size - margin);
+        this.y = random(this.size + margin, worldHeight - this.size - margin);
         this.health = this.maxHealth;
         this.isDead = false;
         this.deathTime = 0;
