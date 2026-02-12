@@ -77,12 +77,35 @@ class Game {
             this.showRoomSelection();
             // Initialize balance display
             this.updateBalanceDisplay();
+            
+            // Request room counts after connection is established
+            if (this.networkManager && this.networkManager.isConnected()) {
+                // Small delay to ensure socket is ready
+                setTimeout(() => {
+                    this.networkManager.requestRoomCounts();
+                }, 100);
+            }
         }, GameConfig.UI.LOADING_SCREEN_DELAY);
     }
 
     showRoomSelection() {
         document.getElementById('roomSelection').classList.remove('hidden');
         this.state = 'menu';
+        
+        // Request room counts from server
+        if (this.networkManager && this.networkManager.isConnected()) {
+            this.networkManager.requestRoomCounts();
+        }
+    }
+
+    updateRoomCounts(roomCounts) {
+        // Update player count display on each room button
+        const roomButtons = document.querySelectorAll('.room-btn');
+        roomButtons.forEach(btn => {
+            const stake = parseInt(btn.dataset.stake);
+            const playerCount = roomCounts[stake] || 0;
+            btn.textContent = `$${stake} Room (${playerCount} player${playerCount !== 1 ? 's' : ''})`;
+        });
     }
 
     hideRoomSelection() {

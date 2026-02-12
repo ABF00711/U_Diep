@@ -48,6 +48,11 @@ class GameServer {
             socket.on('playerDamage', (data) => {
                 this.handlePlayerDamage(socket, data);
             });
+
+            // Request room player counts
+            socket.on('requestRoomCounts', () => {
+                this.handleRequestRoomCounts(socket);
+            });
         });
     }
 
@@ -174,6 +179,30 @@ class GameServer {
         });
 
         console.log(`Player ${socket.id} joined $${stake} room. Total players: ${room.players.size}`);
+        
+        // Broadcast updated room counts to all clients (so they can see player counts)
+        this.broadcastRoomCounts();
+    }
+
+    handleRequestRoomCounts(socket) {
+        // Send current room player counts to requesting client
+        const roomCounts = {};
+        this.roomManager.getAllRooms().forEach((room, stake) => {
+            roomCounts[stake] = room.players.size;
+        });
+        
+        socket.emit('roomCounts', roomCounts);
+    }
+
+    broadcastRoomCounts() {
+        // Broadcast room counts to all connected clients
+        const roomCounts = {};
+        this.roomManager.getAllRooms().forEach((room, stake) => {
+            roomCounts[stake] = room.players.size;
+        });
+        
+        // Send to all connected sockets
+        this.io.emit('roomCounts', roomCounts);
     }
 
     handlePlayerInput(socket, data) {
@@ -342,6 +371,9 @@ class GameServer {
             reason: 'killed_self'
         });
         
+        // Broadcast updated room counts
+        this.broadcastRoomCounts();
+        
         console.log(`Kill self processed: Refund $${refund.toFixed(2)}, Fee $${fee.toFixed(2)}`);
     }
 
@@ -366,6 +398,9 @@ class GameServer {
                 playerId: socket.id,
                 reason: 'disconnected'
             });
+
+            // Broadcast updated room counts
+            this.broadcastRoomCounts();
 
             console.log(`Broadcasted player left to room $${roomStake}`);
         }
@@ -437,6 +472,9 @@ class GameServer {
             
             // Remove empty room
             this.roomManager.removeEmptyRoom(roomStake);
+            
+            // Broadcast updated room counts
+            this.broadcastRoomCounts();
         }
     }
 
@@ -648,6 +686,9 @@ class GameServer {
                 reason: 'died'
             });
         }
+        
+        // Broadcast updated room counts
+        this.broadcastRoomCounts();
         
         console.log(`💀 ${victim.name} was killed by ${killer && killer.id !== victim.id ? killer.name : 'unknown'} - removed from room`);
     }

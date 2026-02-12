@@ -147,6 +147,16 @@ class NetworkManager {
         this.socket.on('botKilled', (data) => {
             this.handleBotKilled(data);
         });
+
+        // Room counts event
+        this.socket.on('roomCounts', (data) => {
+            this.handleRoomCounts(data);
+        });
+    }
+
+    requestRoomCounts() {
+        if (!this.connected) return;
+        this.socket.emit('requestRoomCounts');
     }
 
     joinRoom(stake, playerName, balance) {
@@ -546,10 +556,20 @@ class NetworkManager {
         // Show room selection
         this.game.showRoomSelection();
         
+        // Request updated room counts when returning to menu
+        this.requestRoomCounts();
+        
         // Show message if provided
         if (message) {
             this.game.showMessage(message, GameConfig.UI.MESSAGE_DURATION_LONG);
             console.log(`Exit to menu: ${message}`);
+        }
+    }
+
+    handleRoomCounts(data) {
+        // Update room button player counts
+        if (this.game && this.game.updateRoomCounts) {
+            this.game.updateRoomCounts(data);
         }
     }
 
