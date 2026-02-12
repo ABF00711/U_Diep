@@ -129,7 +129,11 @@ class GameServer {
                 y: player.y,
                 level: player.level,
                 health: player.health,
-                maxHealth: player.maxHealth
+                maxHealth: player.maxHealth,
+                xp: player.xp,
+                xpToNextLevel: player.xpToNextLevel,
+                stats: player.stats,
+                statPoints: player.statPoints
             }
         });
 

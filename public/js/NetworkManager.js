@@ -252,8 +252,23 @@ class NetworkManager {
             this.game.playerTank.maxHealth = data.playerData.maxHealth;
             this.game.playerTank.xp = data.playerData.xp;
             this.game.playerTank.xpToNextLevel = data.playerData.xpToNextLevel;
-            this.game.playerTank.stats = data.playerData.stats;
-            this.game.playerTank.statPoints = data.playerData.statPoints;
+            // Sync stats from server if provided, otherwise ensure stats object exists
+            if (data.playerData.stats) {
+                this.game.playerTank.stats = data.playerData.stats;
+            } else if (!this.game.playerTank.stats) {
+                // Initialize stats if missing
+                this.game.playerTank.stats = {
+                    healthRegen: 0,
+                    maxHealth: 0,
+                    bodyDamage: 0,
+                    bulletSpeed: 0,
+                    bulletPenetration: 0,
+                    bulletDamage: 0,
+                    reload: 0,
+                    movementSpeed: 0
+                };
+            }
+            this.game.playerTank.statPoints = data.playerData.statPoints || 0;
         }
     }
 

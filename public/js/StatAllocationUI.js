@@ -140,10 +140,27 @@ class StatAllocationUI {
         
         const tank = this.game.playerTank;
         
+        // Safety check: ensure stats object exists and is initialized
+        if (!tank.stats || typeof tank.stats !== 'object') {
+            console.warn('Tank stats not initialized properly, initializing default stats:', tank);
+            // Initialize default stats if missing
+            tank.stats = {
+                healthRegen: 0,
+                maxHealth: 0,
+                bodyDamage: 0,
+                bulletSpeed: 0,
+                bulletPenetration: 0,
+                bulletDamage: 0,
+                reload: 0,
+                movementSpeed: 0
+            };
+        }
+        
         // Update stat points available
         const pointsEl = this.container.querySelector('#statPointsAvailable');
         if (pointsEl) {
-            pointsEl.textContent = tank.getStatPoints();
+            const statPoints = tank.getStatPoints ? tank.getStatPoints() : (tank.statPoints || 0);
+            pointsEl.textContent = statPoints;
         }
         
         // Update all stat values (show max indicator if at limit)
