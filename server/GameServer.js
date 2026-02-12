@@ -447,7 +447,7 @@ class GameServer {
             // Update bullets
             this.bulletManager.updateBullets(room, deltaTime);
             
-            // Check collisions
+            // Check collisions (order matters: bot-tank first, then bullet collisions)
             this.collisionManager.checkBotTankCollisions(
                 room,
                 this.playerManager,
@@ -455,12 +455,15 @@ class GameServer {
                 (player, bot) => this.handleBotKilled(player, bot)
             );
             
+            // Check bullet collisions (bullets can hit both players and bots)
+            // Both checks share the same bullet set, so bullets removed in one check won't be checked in the other
             this.collisionManager.checkBulletPlayerCollisions(
                 room,
                 this.playerManager,
                 (attacker, target) => this.handlePlayerDeath(attacker, target)
             );
             
+            // Check bot collisions (bullets that still have penetration can hit bots)
             this.collisionManager.checkBulletBotCollisions(
                 room,
                 this.playerManager,
@@ -502,10 +505,21 @@ class GameServer {
                     rotation: b.rotation
                 }));
 
-            if (players.length > 0 || bots.length > 0) {
+            // Get bullet states (so clients can sync and remove bullets that no longer exist)
+            const bullets = Array.from(room.bullets.values())
+                .map(b => ({
+                    bulletId: b.id,
+                    x: b.x,
+                    y: b.y,
+                    angle: b.angle,
+                    penetration: b.penetration
+                }));
+
+            if (players.length > 0 || bots.length > 0 || bullets.length > 0) {
                 this.io.to(`room_${stake}`).emit('gameState', {
                     players: players,
                     bots: bots,
+                    bullets: bullets,
                     timestamp: Date.now()
                 });
             }

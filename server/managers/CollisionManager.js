@@ -94,10 +94,21 @@ class CollisionManager {
      * Check bullet-player collisions
      */
     checkBulletPlayerCollisions(room, playerManager, onPlayerDeath) {
+        const bulletsToRemove = [];
+        
         room.bullets.forEach((bullet) => {
+            // Skip if bullet has no penetration left
+            if (bullet.penetration <= 0) {
+                bulletsToRemove.push(bullet.id);
+                return;
+            }
+            
             room.players.forEach((targetPlayer) => {
+                // Skip if bullet ran out of penetration (might have been reduced by previous hit in this frame)
+                if (bullet.penetration <= 0) return;
+                
                 if (targetPlayer.isDead || targetPlayer.id === bullet.ownerId) return;
-                if (bullet.hitTargets.has(targetPlayer.id)) return; // Already hit this frame
+                if (bullet.hitTargets.has(targetPlayer.id)) return; // Already hit this target this frame (prevents double-hit)
                 
                 const distance = Math.sqrt(
                     Math.pow(bullet.x - targetPlayer.x, 2) + 
@@ -106,7 +117,7 @@ class CollisionManager {
                 const tankSize = 30;
                 
                 if (distance < tankSize + bullet.size) {
-                    // Hit! Mark target as hit
+                    // Hit! Mark target as hit (prevents hitting same target multiple times in one frame)
                     bullet.hitTargets.add(targetPlayer.id);
                     
                     // Apply damage
@@ -123,26 +134,43 @@ class CollisionManager {
                         }
                     }
                     
-                    // Decrease penetration
+                    // Decrease penetration (allows bullet to hit multiple targets if penetration > 1)
                     bullet.penetration--;
                     if (bullet.penetration <= 0) {
-                        room.bullets.delete(bullet.id);
+                        bulletsToRemove.push(bullet.id);
                     }
                 }
             });
+        });
+        
+        // Remove bullets that ran out of penetration
+        bulletsToRemove.forEach(bulletId => {
+            room.bullets.delete(bulletId);
         });
     }
 
     /**
      * Check bullet-bot collisions
+     * Note: This is called AFTER checkBulletPlayerCollisions, so bullets that hit players
+     * and ran out of penetration will already be removed. Bullets with remaining penetration
+     * can still hit bots.
      */
     checkBulletBotCollisions(room, playerManager, onBotKilled) {
+        const bulletsToRemove = [];
+        
         room.bullets.forEach((bullet) => {
-            if (bullet.hitTargets.has('bot')) return; // Already hit a bot this frame
+            // Skip if bullet has no penetration left (might have been reduced by hitting a player)
+            if (bullet.penetration <= 0) {
+                bulletsToRemove.push(bullet.id);
+                return;
+            }
             
             room.bots.forEach((bot) => {
+                // Skip if bullet ran out of penetration (might have been reduced by previous hit in this frame)
+                if (bullet.penetration <= 0) return;
+                
                 if (bot.isDead) return;
-                if (bullet.hitTargets.has(bot.id)) return; // Already hit this bot
+                if (bullet.hitTargets.has(bot.id)) return; // Already hit this bot this frame (prevents double-hit)
                 
                 const distance = Math.sqrt(
                     Math.pow(bullet.x - bot.x, 2) + 
@@ -150,9 +178,8 @@ class CollisionManager {
                 );
                 
                 if (distance < bot.size + bullet.size) {
-                    // Hit bot
+                    // Hit bot - mark target as hit (prevents hitting same bot multiple times in one frame)
                     bullet.hitTargets.add(bot.id);
-                    bullet.hitTargets.add('bot'); // Mark as hit any bot
                     
                     const oldBotHealth = bot.health;
                     bot.health = Math.max(0, bot.health - bullet.damage);
@@ -170,13 +197,18 @@ class CollisionManager {
                         }
                     }
                     
-                    // Decrease penetration
+                    // Decrease penetration (allows bullet to hit multiple bots if penetration > 1)
                     bullet.penetration--;
                     if (bullet.penetration <= 0) {
-                        room.bullets.delete(bullet.id);
+                        bulletsToRemove.push(bullet.id);
                     }
                 }
             });
+        });
+        
+        // Remove bullets that ran out of penetration
+        bulletsToRemove.forEach(bulletId => {
+            room.bullets.delete(bulletId);
         });
     }
 }

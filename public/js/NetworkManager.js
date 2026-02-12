@@ -296,7 +296,12 @@ class NetworkManager {
     handleGameState(data) {
         // Debug: Log game state updates (occasionally)
         if (Math.random() < 0.01) { // 1% chance
-            console.log('📡 Game state update:', data.players.length, 'players', data.bots?.length || 0, 'bots');
+            console.log('📡 Game state update:', data.players.length, 'players', data.bots?.length || 0, 'bots', data.bullets?.length || 0, 'bullets');
+        }
+        
+        // Sync bullets from server (server is authoritative - remove bullets that don't exist on server)
+        if (data.bullets) {
+            this.syncServerBullets(data.bullets);
         }
         
         // Update bots from server (server is authoritative)
@@ -574,6 +579,36 @@ class NetworkManager {
         }
         
         // IMPORTANT: Do NOT disconnect - stay in game and continue playing!
+    }
+
+    syncServerBullets(serverBullets) {
+        // Create a map of server bullet IDs for quick lookup
+        const serverBulletIds = new Set(serverBullets.map(b => b.bulletId));
+        
+        // Remove bullets that no longer exist on server
+        this.game.bullets = this.game.bullets.filter(bullet => {
+            if (bullet.id && !serverBulletIds.has(bullet.id)) {
+                return false; // Remove bullet that's not on server anymore
+            }
+            return true;
+        });
+        
+        // Update existing bullets or create new ones from server data
+        serverBullets.forEach(bulletData => {
+            let bullet = this.game.bullets.find(b => b.id === bulletData.bulletId);
+            
+            if (bullet) {
+                // Update existing bullet position (server is authoritative)
+                bullet.x = bulletData.x;
+                bullet.y = bulletData.y;
+                bullet.angle = bulletData.angle;
+                // Update penetration (so client knows when bullet should be removed)
+                if (bulletData.penetration !== undefined) {
+                    bullet.penetration = bulletData.penetration;
+                }
+            }
+            // Note: New bullets are created via bulletFired event, not here
+        });
     }
 
     updateServerBots(serverBots) {

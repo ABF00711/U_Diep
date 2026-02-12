@@ -417,21 +417,26 @@ class Game {
                 return false;
             }
             
-            // Check collisions with tanks (only alive ones)
-            const allTanks = [this.playerTank, ...this.enemyTanks].filter(t => t && !t.isDead);
-            const shouldRemove = this.collisionManager.checkBulletTankCollision(bullet, allTanks);
-            if (shouldRemove) {
-                return false; // Remove bullet
+            // Remove if penetration reached 0 (server handles collisions when connected, but client should respect penetration)
+            if (bullet.penetration !== undefined && bullet.penetration <= 0) {
+                return false;
             }
             
-            // Check collisions with bots (only in offline mode - server handles when connected)
+            // Check collisions with tanks (only in offline mode - server handles when connected)
             if (!this.networkManager.isConnected()) {
+                const allTanks = [this.playerTank, ...this.enemyTanks].filter(t => t && !t.isDead);
+                const shouldRemove = this.collisionManager.checkBulletTankCollision(bullet, allTanks);
+                if (shouldRemove) {
+                    return false; // Remove bullet
+                }
+                
+                // Check collisions with bots (only in offline mode - server handles when connected)
                 const shouldRemoveBot = this.collisionManager.checkBulletBotCollision(bullet, this.bots);
                 if (shouldRemoveBot) {
                     return false; // Remove bullet
                 }
             }
-            // Server handles bot-bullet collisions when connected
+            // Server handles collisions when connected - bullets are synced via gameState
             
             return true;
         });
