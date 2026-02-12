@@ -217,7 +217,11 @@ class GameServer {
         
         // Handle shooting
         if (isShooting) {
-            const reloadTime = Math.max(100, GameConfig.TANK.BASE_RELOAD_TIME - (player.stats.reload * GameConfig.TANK.RELOAD_MULTIPLIER));
+            // Reload stat reduces reload time: each point reduces by RELOAD_MULTIPLIER ms
+            // Formula: BASE_RELOAD_TIME - (reload_stat * RELOAD_MULTIPLIER)
+            // Example with 7 points: 1000ms - (7 * 100) = 300ms minimum reload time
+            const reloadReduction = (player.stats.reload || 0) * GameConfig.TANK.RELOAD_MULTIPLIER;
+            const reloadTime = Math.max(100, GameConfig.TANK.BASE_RELOAD_TIME - reloadReduction);
             const currentTime = Date.now();
             
             if (currentTime - player.lastShotTime >= reloadTime) {
