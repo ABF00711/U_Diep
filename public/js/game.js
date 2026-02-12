@@ -241,6 +241,33 @@ class Game {
     }
     
     /**
+     * Draw grid pattern on the arena (static grid like diep.io)
+     */
+    drawGrid() {
+        const gridSize = GameConfig.GAME.GRID_SIZE;
+        const ctx = this.ctx;
+        
+        ctx.strokeStyle = GameConfig.COLORS.GRID_LINE;
+        ctx.lineWidth = 1;
+        
+        // Draw vertical lines
+        for (let x = 0; x <= this.canvas.width; x += gridSize) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, this.canvas.height);
+            ctx.stroke();
+        }
+        
+        // Draw horizontal lines
+        for (let y = 0; y <= this.canvas.height; y += gridSize) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(this.canvas.width, y);
+            ctx.stroke();
+        }
+    }
+
+    /**
      * Helper: Draw rounded rectangle for pellets
      */
     roundedRectPellet(ctx, x, y, width, height, radius) {
@@ -492,6 +519,9 @@ class Game {
         // Clear canvas
         this.ctx.fillStyle = GameConfig.COLORS.ARENA_BACKGROUND;
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // Draw grid pattern (static, like diep.io)
+        this.drawGrid();
 
         if (this.state === 'playing') {
             // Draw bots

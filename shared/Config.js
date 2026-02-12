@@ -80,7 +80,8 @@ const GameConfig = {
         MAX_DELTA_TIME: 0.1,               // Cap deltaTime to prevent large jumps
         CANVAS_MIN_WIDTH: 800,
         CANVAS_MIN_HEIGHT: 600,
-        SPAWN_MARGIN: 50                   // Margin from edges when spawning
+        SPAWN_MARGIN: 50,                  // Margin from edges when spawning
+        GRID_SIZE: 50                      // Grid cell size in pixels (like diep.io)
     },
 
     // Colors
@@ -95,6 +96,7 @@ const GameConfig = {
         BOT_RECTANGLE_BORDER: '#D4AF37',    // Darker gold square border
         ARENA_BACKGROUND: '#16213e',
         ARENA_BORDER: '#0f3460',
+        GRID_LINE: '#1a2a3a',               // Grid line color (subtle, darker than background)
         HEALTH_BAR_BG: '#333',
         HEALTH_BAR_HIGH: '#4caf50',         // > 50%
         HEALTH_BAR_MEDIUM: '#ff9800',      // 25-50%
