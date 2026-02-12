@@ -525,12 +525,12 @@ class GameServer {
                 player.x += player.vx * deltaTime;
                 player.y += player.vy * deltaTime;
                 
-                // Clamp positions
-                const canvasWidth = player.canvasWidth || 1920;
-                const canvasHeight = player.canvasHeight || 1080;
+                // Clamp positions to world bounds
+                const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+                const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
                 const tankSize = 30;
-                player.x = Math.max(tankSize, Math.min(canvasWidth - tankSize, player.x));
-                player.y = Math.max(tankSize, Math.min(canvasHeight - tankSize, player.y));
+                player.x = Math.max(tankSize, Math.min(worldWidth - tankSize, player.x));
+                player.y = Math.max(tankSize, Math.min(worldHeight - tankSize, player.y));
             });
         });
 
