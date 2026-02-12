@@ -1,7 +1,6 @@
 // Game Configuration Constants
+// Shared configuration for both server and client
 // Centralized configuration for easy maintenance and scalability
-// This file mirrors shared/Config.js for client-side use
-// For server, use: const GameConfig = require('../shared/Config.js');
 
 const GameConfig = {
     // Economy Settings
@@ -119,3 +118,8 @@ const GameConfig = {
         MAX_KILL_XP: 200                   // Maximum XP from a single kill
     }
 };
+
+// Export for Node.js (server)
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = GameConfig;
+}

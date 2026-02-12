@@ -1,31 +1,11 @@
 // Game Server Module
 // Handles room management, player synchronization, and game state
 
-// Bot configuration (matches client Config.js)
-const BOT_CONFIG = {
-    RECTANGLE: {
-        HEALTH: 75,
-        MAX_HEALTH: 75,
-        BODY_DAMAGE: 8,
-        SIZE: 20,
-        XP_REWARD: 50
-    },
-    TRIANGLE: {
-        HEALTH: 150,
-        MAX_HEALTH: 150,
-        BODY_DAMAGE: 15,
-        SIZE: 25,
-        XP_REWARD: 100
-    },
-    DEFAULT_SPEED: 30,
-    DEFAULT_RESPAWN_TIME: 30000, // 30 seconds
-    DEFAULT_DAMAGE_COOLDOWN: 1000, // 1 second
-    DIRECTION_CHANGE_MIN: 2, // seconds
-    DIRECTION_CHANGE_MAX: 5, // seconds
-    RECTANGLE_SPAWN_CHANCE: 0.7, // 70%
-    SQUIRT_FORCE: 150,
-    SQUIRT_DAMPENING: 0.95
-};
+// Import shared configuration
+const GameConfig = require('../shared/Config.js');
+
+// Bot configuration (use shared config)
+const BOT_CONFIG = GameConfig.BOT;
 
 class GameServer {
     constructor(io) {
@@ -143,7 +123,7 @@ class GameServer {
                 health: 100,
                 maxHealth: 100,
                 xp: 0,
-                xpToNextLevel: 100,
+                xpToNextLevel: GameConfig.XP.BASE_XP_TO_NEXT_LEVEL,
                 lastHealthUpdate: Date.now(),
                 stats: {
                     maxHealth: 0,
@@ -153,7 +133,8 @@ class GameServer {
                     bulletDamage: 0,
                     bulletPenetration: 0,
                     bulletSize: 0,
-                    bodyDamage: 0
+                    bodyDamage: 0,
+                    healthRegen: 0
                 },
                 statPoints: 0,
                 pendingStatAllocation: false,
@@ -315,25 +296,51 @@ class GameServer {
 
     handleStatAllocation(socket, data) {
         const player = this.players.get(socket.id);
-        if (!player || !player.pendingStatAllocation) return;
+        if (!player) {
+            console.warn(`Stat allocation from unknown player: ${socket.id}`);
+            return;
+        }
 
         const { statName } = data;
         
-        // Validate stat allocation (simplified - full validation should be on client)
-        if (player.statPoints > 0 && player.stats[statName] < 7) {
-            player.stats[statName]++;
-            player.statPoints--;
-
-            // Apply stat changes
-            this.applyStatChanges(player);
-
-            // Broadcast update
-            socket.emit('statAllocated', {
-                statName: statName,
-                newValue: player.stats[statName],
-                remainingPoints: player.statPoints
-            });
+        // Validate stat allocation
+        if (!statName || !player.stats.hasOwnProperty(statName)) {
+            console.warn(`Invalid stat name: ${statName}`);
+            return;
         }
+        
+        // Check if player has points and stat is not at max
+        if (player.statPoints <= 0) {
+            console.warn(`Player ${socket.id} tried to allocate stat but has no points`);
+            return;
+        }
+        
+        if (player.stats[statName] >= GameConfig.TANK.MAX_STAT_POINTS) {
+            console.warn(`Player ${socket.id} tried to allocate stat ${statName} but it's at max`);
+            return;
+        }
+        
+        // Allocate stat point
+        player.stats[statName]++;
+        player.statPoints--;
+        
+        // Check if still has pending allocation
+        if (player.statPoints <= 0) {
+            player.pendingStatAllocation = false;
+        }
+
+        // Apply stat changes
+        this.applyStatChanges(player);
+
+        // Send confirmation to player
+        socket.emit('statAllocated', {
+            statName: statName,
+            newValue: player.stats[statName],
+            remainingPoints: player.statPoints,
+            pendingStatAllocation: player.pendingStatAllocation
+        });
+        
+        console.log(`✅ Stat allocated: ${player.name} allocated ${statName} (${player.stats[statName]}/${GameConfig.TANK.MAX_STAT_POINTS}), ${player.statPoints} points remaining`);
     }
 
     handleKillSelf(socket) {
@@ -480,11 +487,13 @@ class GameServer {
     }
 
     applyStatChanges(player) {
-        // Update derived stats
-        player.maxHealth = 100 + (player.stats.maxHealth * 10);
+        // Update derived stats based on allocated stat points
+        // Max Health: Base + (stat points * 5)
+        player.maxHealth = GameConfig.TANK.DEFAULT_MAX_HEALTH + (player.stats.maxHealth * 5);
         if (player.health > player.maxHealth) {
             player.health = player.maxHealth;
         }
+        // Other stats are applied when creating bullets or calculating movement
     }
 
     removePlayerFromRoom(socketId) {
@@ -583,7 +592,7 @@ class GameServer {
             } else if (levelDiff < 0) {
                 xpReward = Math.max(10, 50 + (levelDiff * 5));
             }
-            xpReward = Math.min(xpReward, 200);
+            xpReward = Math.min(xpReward, GameConfig.XP.MAX_KILL_XP);
             
             // Update killer XP and level
             const oldLevel = killer.level;
@@ -593,7 +602,7 @@ class GameServer {
                 killer.level++;
                 killer.statPoints++;
                 killer.pendingStatAllocation = true;
-                killer.xpToNextLevel = Math.floor(killer.xpToNextLevel * 1.2);
+                killer.xpToNextLevel = Math.floor(killer.xpToNextLevel * GameConfig.XP.XP_MULTIPLIER_PER_LEVEL);
             }
             
             // Notify killer (they stay in game and continue playing)
@@ -605,7 +614,8 @@ class GameServer {
                 newLevel: killer.level,
                 newXP: killer.xp,
                 xpToNextLevel: killer.xpToNextLevel,
-                statPoints: killer.statPoints
+                statPoints: killer.statPoints,
+                pendingStatAllocation: killer.pendingStatAllocation
             });
             
             console.log(`💰 ${killer.name} killed ${victim.name}: +$${reward.toFixed(2)}, +${xpReward} XP`);
@@ -757,7 +767,7 @@ class GameServer {
                                         attacker.level++;
                                         attacker.statPoints++;
                                         attacker.pendingStatAllocation = true;
-                                        attacker.xpToNextLevel = Math.floor(attacker.xpToNextLevel * 1.2);
+                                        attacker.xpToNextLevel = Math.floor(attacker.xpToNextLevel * GameConfig.XP.XP_MULTIPLIER_PER_LEVEL);
                                     }
                                     
                                     // Notify attacker
@@ -767,7 +777,8 @@ class GameServer {
                                         newLevel: attacker.level,
                                         newXP: attacker.xp,
                                         xpToNextLevel: attacker.xpToNextLevel,
-                                        statPoints: attacker.statPoints
+                                        statPoints: attacker.statPoints,
+                                        pendingStatAllocation: attacker.pendingStatAllocation
                                     });
                                 }
                             }
@@ -943,7 +954,7 @@ class GameServer {
                                 player.level++;
                                 player.statPoints++;
                                 player.pendingStatAllocation = true;
-                                player.xpToNextLevel = Math.floor(player.xpToNextLevel * 1.2);
+                                player.xpToNextLevel = Math.floor(player.xpToNextLevel * GameConfig.XP.XP_MULTIPLIER_PER_LEVEL);
                             }
                             
                             // Notify player
@@ -953,7 +964,8 @@ class GameServer {
                                 newLevel: player.level,
                                 newXP: player.xp,
                                 xpToNextLevel: player.xpToNextLevel,
-                                statPoints: player.statPoints
+                                statPoints: player.statPoints,
+                                pendingStatAllocation: player.pendingStatAllocation
                             });
                         }
                     }
@@ -976,7 +988,9 @@ class GameServer {
                     health: p.health,
                     maxHealth: p.maxHealth,
                     xp: p.xp,
-                    xpToNextLevel: p.xpToNextLevel
+                    xpToNextLevel: p.xpToNextLevel,
+                    statPoints: p.statPoints,
+                    pendingStatAllocation: p.pendingStatAllocation
                 }));
 
             // Get bot states

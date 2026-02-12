@@ -23,6 +23,11 @@ const PORT = process.env.PORT || 3000;
 const publicPath = path.join(__dirname, '..', 'public');
 app.use(express.static(publicPath));
 
+// Serve shared Config.js for client
+app.get('/shared/Config.js', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'shared', 'Config.js'));
+});
+
 // Serve index.html for root route
 app.get('/', (req, res) => {
     res.sendFile(path.join(publicPath, 'index.html'));

@@ -107,9 +107,22 @@ class NetworkManager {
 
         // Player events
         this.socket.on('statAllocated', (data) => {
-            // Update local player stats if needed
+            // Update local player stats from server confirmation
             if (this.game.playerTank) {
-                // Stats are synced from server
+                // Update stat value
+                if (data.statName && this.game.playerTank.stats.hasOwnProperty(data.statName)) {
+                    this.game.playerTank.stats[data.statName] = data.newValue;
+                    // Apply stat changes locally
+                    this.game.playerTank.applyStatChanges(data.statName);
+                }
+                // Update stat points
+                if (data.remainingPoints !== undefined) {
+                    this.game.playerTank.statPoints = data.remainingPoints;
+                }
+                // Update UI if visible
+                if (this.game.statAllocationUI && this.game.statAllocationUI.isVisible) {
+                    this.game.statAllocationUI.updateDisplay();
+                }
             }
         });
 
@@ -286,12 +299,20 @@ class NetworkManager {
                     this.game.playerTank.y = playerData.y;
                     this.game.playerTank.angle = playerData.angle;
                     // Level and XP are server-authoritative
+                    const oldLevel = this.game.playerTank.level;
                     this.game.playerTank.level = playerData.level || this.game.playerTank.level;
                     if (playerData.xp !== undefined) {
                         this.game.playerTank.xp = playerData.xp;
                     }
                     if (playerData.xpToNextLevel !== undefined) {
                         this.game.playerTank.xpToNextLevel = playerData.xpToNextLevel;
+                    }
+                    // Sync stat points and pending allocation from server
+                    if (playerData.statPoints !== undefined) {
+                        this.game.playerTank.statPoints = playerData.statPoints;
+                    }
+                    if (playerData.pendingStatAllocation !== undefined) {
+                        this.game.playerTank.pendingStatAllocation = playerData.pendingStatAllocation;
                     }
                     // Health is server-authoritative - always use server value
                     const oldHealth = this.game.playerTank.health;
@@ -516,11 +537,18 @@ class NetworkManager {
             this.game.playerTank.level = data.newLevel;
             this.game.playerTank.xpToNextLevel = data.xpToNextLevel || this.game.playerTank.xpToNextLevel;
             
+            // Sync stat points and pending allocation from server
+            if (data.statPoints !== undefined) {
+                this.game.playerTank.statPoints = data.statPoints;
+            }
+            if (data.pendingStatAllocation !== undefined) {
+                this.game.playerTank.pendingStatAllocation = data.pendingStatAllocation;
+            }
+            
             // Check if we leveled up
             if (data.newLevel > oldLevel) {
-                const levelDiff = data.newLevel - oldLevel;
-                this.game.playerTank.statPoints += levelDiff; // Add stat points for level ups
-                this.game.playerTank.pendingStatAllocation = true;
+                // Stat points and pending allocation are already synced from server
+                // Just ensure UI shows if needed
             }
             
             // Show message
@@ -588,11 +616,12 @@ class NetworkManager {
             this.game.playerTank.level = data.newLevel;
             this.game.playerTank.xpToNextLevel = data.xpToNextLevel || this.game.playerTank.xpToNextLevel;
             
-            // Check if we leveled up
-            if (data.newLevel > oldLevel) {
-                const levelDiff = data.newLevel - oldLevel;
-                this.game.playerTank.statPoints += levelDiff;
-                this.game.playerTank.pendingStatAllocation = true;
+            // Sync stat points and pending allocation from server
+            if (data.statPoints !== undefined) {
+                this.game.playerTank.statPoints = data.statPoints;
+            }
+            if (data.pendingStatAllocation !== undefined) {
+                this.game.playerTank.pendingStatAllocation = data.pendingStatAllocation;
             }
             
             // Show message

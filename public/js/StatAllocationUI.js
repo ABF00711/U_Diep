@@ -91,21 +91,28 @@ class StatAllocationUI {
     allocateStat(statName) {
         if (!this.game.playerTank) return;
         
-        const success = this.game.playerTank.allocateStatPoint(statName);
-        if (success) {
-            this.updateDisplay();
-            // Play sound or visual feedback (optional)
+        // Check if we're connected to server - if so, send to server
+        if (this.game.networkManager && this.game.networkManager.isConnected()) {
+            // Send to server - server will validate and update
+            this.game.networkManager.sendStatAllocation(statName);
+            // Don't update locally - wait for server confirmation via statAllocated event
         } else {
-            // Show feedback if allocation failed (max reached or no points)
-            const tank = this.game.playerTank;
-            if (tank.stats[statName] >= GameConfig.TANK.MAX_STAT_POINTS) {
-                // Stat is at maximum
-                const statBtn = this.container.querySelector(`[data-stat="${statName}"]`);
-                if (statBtn) {
-                    statBtn.style.background = '#e24a4a';
-                    setTimeout(() => {
-                        statBtn.style.background = '';
-                    }, 200);
+            // Offline mode - allocate locally
+            const success = this.game.playerTank.allocateStatPoint(statName);
+            if (success) {
+                this.updateDisplay();
+            } else {
+                // Show feedback if allocation failed (max reached or no points)
+                const tank = this.game.playerTank;
+                if (tank.stats[statName] >= GameConfig.TANK.MAX_STAT_POINTS) {
+                    // Stat is at maximum
+                    const statBtn = this.container.querySelector(`[data-stat="${statName}"]`);
+                    if (statBtn) {
+                        statBtn.style.background = '#e24a4a';
+                        setTimeout(() => {
+                            statBtn.style.background = '';
+                        }, 200);
+                    }
                 }
             }
         }
