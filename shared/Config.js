@@ -84,7 +84,9 @@ const GameConfig = {
         GRID_SIZE: 50,                     // Grid cell size in pixels (like diep.io)
         WORLD_WIDTH: 5000,                 // World width in pixels (larger than viewport)
         WORLD_HEIGHT: 5000,                // World height in pixels (larger than viewport)
-        CAMERA_SMOOTH_FACTOR: 0.1          // Camera follow smoothness (0-1, lower = smoother)
+        CAMERA_SMOOTH_FACTOR: 0.15,        // Camera smoothing factor (0-1, higher = faster follow, like diep.io)
+        CAMERA_DEAD_ZONE: 50,              // Dead zone radius in pixels (camera only moves if player is this far from center)
+        PLAYER_INTERPOLATION_SPEED: 0.2    // Player position interpolation speed (0-1, higher = faster, smoother movement)
     },
 
     // Colors

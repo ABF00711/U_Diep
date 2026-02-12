@@ -239,7 +239,10 @@ class Tank {
 
     draw(ctx) {
         ctx.save();
-        ctx.translate(this.x, this.y);
+        // Use render position for smooth visual movement (if available), otherwise use server position
+        const renderX = this.renderX !== undefined ? this.renderX : this.x;
+        const renderY = this.renderY !== undefined ? this.renderY : this.y;
+        ctx.translate(renderX, renderY);
 
         // Draw tank body (circle - no gradient, solid color)
         ctx.fillStyle = this.color;
@@ -273,10 +276,13 @@ class Tank {
     }
 
     drawHealthBar(ctx) {
+        // Use render position for smooth movement (if available)
+        const renderX = this.renderX !== undefined ? this.renderX : this.x;
+        const renderY = this.renderY !== undefined ? this.renderY : this.y;
         const barWidth = this.size * 2;
         const barHeight = 4;
-        const barX = this.x - barWidth / 2;
-        const barY = this.y - this.size - 15;
+        const barX = renderX - barWidth / 2;
+        const barY = renderY - this.size - 15;
 
         // Background
         ctx.fillStyle = GameConfig.COLORS.HEALTH_BAR_BG;
@@ -300,23 +306,31 @@ class Tank {
     }
 
     drawLevel(ctx) {
+        // Use render position for smooth movement (if available)
+        const renderX = this.renderX !== undefined ? this.renderX : this.x;
+        const renderY = this.renderY !== undefined ? this.renderY : this.y;
+        
         ctx.fillStyle = '#fff';
         ctx.font = 'bold 12px Arial';
         ctx.textAlign = 'center';
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 2;
-        ctx.strokeText(`Lv.${this.level}`, this.x, this.y - this.size - 25);
-        ctx.fillText(`Lv.${this.level}`, this.x, this.y - this.size - 25);
+        ctx.strokeText(`Lv.${this.level}`, renderX, renderY - this.size - 25);
+        ctx.fillText(`Lv.${this.level}`, renderX, renderY - this.size - 25);
     }
 
     drawName(ctx) {
+        // Use render position for smooth movement (if available)
+        const renderX = this.renderX !== undefined ? this.renderX : this.x;
+        const renderY = this.renderY !== undefined ? this.renderY : this.y;
+        
         ctx.fillStyle = '#fff';
         ctx.font = '10px Arial';
         ctx.textAlign = 'center';
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 2;
-        ctx.strokeText(this.name, this.x, this.y - this.size - 35);
-        ctx.fillText(this.name, this.x, this.y - this.size - 35);
+        ctx.strokeText(this.name, renderX, renderY - this.size - 35);
+        ctx.fillText(this.name, renderX, renderY - this.size - 35);
     }
 
     canDamageTarget(targetId, currentTime) {

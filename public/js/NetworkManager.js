@@ -336,10 +336,16 @@ class NetworkManager {
             if (playerData.playerId === this.playerId) {
                 // Update local player from server (authoritative)
                 if (this.game.playerTank) {
-                    // Direct update for immediate response (server is authoritative)
+                    // Server position is authoritative (for collisions/logic)
                     this.game.playerTank.x = playerData.x;
                     this.game.playerTank.y = playerData.y;
                     this.game.playerTank.angle = playerData.angle;
+                    
+                    // Initialize render position if not set (for smooth visual interpolation)
+                    if (this.game.playerTank.renderX === undefined) {
+                        this.game.playerTank.renderX = playerData.x;
+                        this.game.playerTank.renderY = playerData.y;
+                    }
                     // Level and XP are server-authoritative
                     const oldLevel = this.game.playerTank.level;
                     this.game.playerTank.level = playerData.level || this.game.playerTank.level;

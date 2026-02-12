@@ -91,18 +91,21 @@ class Game {
 
     /**
      * Update camera to follow player smoothly
+     * Uses exponential smoothing for smooth camera movement (like diep.io)
+     * Camera follows the player's render position (interpolated), not server position
      */
     updateCamera(deltaTime) {
         if (!this.playerTank || this.state !== 'playing') return;
         
-        // Set target to player position
-        this.camera.targetX = this.playerTank.x;
-        this.camera.targetY = this.playerTank.y;
+        // Use player's render position (smoothed) for camera following
+        // This prevents stiffness because camera follows smooth movement, not discrete server updates
+        const targetX = this.playerTank.renderX !== undefined ? this.playerTank.renderX : this.playerTank.x;
+        const targetY = this.playerTank.renderY !== undefined ? this.playerTank.renderY : this.playerTank.y;
         
-        // Smoothly interpolate camera position
+        // Exponential smoothing (like diep.io) - smooth and responsive
         const smoothFactor = GameConfig.GAME.CAMERA_SMOOTH_FACTOR;
-        this.camera.x += (this.camera.targetX - this.camera.x) * smoothFactor;
-        this.camera.y += (this.camera.targetY - this.camera.y) * smoothFactor;
+        this.camera.x += (targetX - this.camera.x) * smoothFactor;
+        this.camera.y += (targetY - this.camera.y) * smoothFactor;
         
         // Clamp camera to world boundaries
         const worldWidth = GameConfig.GAME.WORLD_WIDTH;
@@ -467,11 +470,24 @@ class Game {
             this.statAllocationUI.show();
         }
 
-        // Update camera
-        this.updateCamera(deltaTime);
-
         // Update player tank
         if (this.playerTank) {
+            // Interpolate player render position (for smooth visual movement)
+            // Server position is authoritative, but we smooth it for rendering
+            if (this.networkManager.isConnected() && this.playerTank.renderX !== undefined) {
+                const interpolationSpeed = GameConfig.GAME.PLAYER_INTERPOLATION_SPEED;
+                this.playerTank.renderX += (this.playerTank.x - this.playerTank.renderX) * interpolationSpeed;
+                this.playerTank.renderY += (this.playerTank.y - this.playerTank.renderY) * interpolationSpeed;
+            } else {
+                // Initialize render position if not set
+                if (this.playerTank.renderX === undefined) {
+                    this.playerTank.renderX = this.playerTank.x;
+                    this.playerTank.renderY = this.playerTank.y;
+                }
+            }
+            
+            // Update camera (follows render position, not server position)
+            this.updateCamera(deltaTime);
             // Send input to server
             if (this.networkManager.isConnected()) {
                 const mousePos = this.input.getMousePosition();
@@ -501,8 +517,11 @@ class Game {
                 
                 // Don't update locally when connected - server is authoritative
                 // Only update angle for visual feedback (reuse worldMouse already calculated above)
-                const dx = worldMouse.x - this.playerTank.x;
-                const dy = worldMouse.y - this.playerTank.y;
+                // Use render position for angle calculation to match visual position
+                const renderX = this.playerTank.renderX !== undefined ? this.playerTank.renderX : this.playerTank.x;
+                const renderY = this.playerTank.renderY !== undefined ? this.playerTank.renderY : this.playerTank.y;
+                const dx = worldMouse.x - renderX;
+                const dy = worldMouse.y - renderY;
                 this.playerTank.angle = Math.atan2(dy, dx);
             } else {
                 // Update locally when not connected (offline mode)
