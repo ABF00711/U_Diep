@@ -196,7 +196,7 @@ class NetworkManager {
             keys: keys,
             mouseX: mouseX,
             mouseY: mouseY,
-            shooting: shooting
+            isShooting: shooting  // Match server expectation
         });
     }
 
