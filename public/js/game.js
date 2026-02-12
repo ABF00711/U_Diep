@@ -500,9 +500,10 @@ class Game {
                 );
                 
                 // Don't update locally when connected - server is authoritative
-                // Only update angle for visual feedback
-                const mouse = this.input.getMousePosition();
-                this.playerTank.angle = Math.atan2(mouse.y - this.playerTank.y, mouse.x - this.playerTank.x);
+                // Only update angle for visual feedback (reuse worldMouse already calculated above)
+                const dx = worldMouse.x - this.playerTank.x;
+                const dy = worldMouse.y - this.playerTank.y;
+                this.playerTank.angle = Math.atan2(dy, dx);
             } else {
                 // Update locally when not connected (offline mode)
                 this.playerTank.update(deltaTime, this.input, this.canvas.width, this.canvas.height);
