@@ -279,17 +279,29 @@ class NetworkManager {
     handlePlayerLeft(data) {
         const playerId = data.playerId;
         const reason = data.reason || 'unknown';
-        const tank = this.serverPlayers.get(playerId);
         
-        console.log(`👋 Player left: ${playerId} (reason: ${reason})`);
+        // Ignore if it's the local player (we handle our own disconnect/death separately)
+        if (playerId === this.playerId) {
+            return;
+        }
+        
+        const tank = this.serverPlayers.get(playerId);
         
         if (tank) {
             // Remove from enemy tanks
             this.game.enemyTanks = this.game.enemyTanks.filter(t => t !== tank);
             this.serverPlayers.delete(playerId);
-            console.log(`Removed player tank from game: ${playerId}`);
+            console.log(`👋 Removed player tank from game: ${playerId} (reason: ${reason})`);
         } else {
-            console.warn(`Player left but tank not found: ${playerId}`);
+            // Tank not found - might have already been cleaned up or never existed
+            // This can happen if:
+            // 1. Player left before we received their join event
+            // 2. Tank was already removed in a previous cleanup
+            // 3. Player rejoined and we're receiving an old leave event
+            // This is not an error, just log for debugging
+            if (Math.random() < 0.1) { // Only log occasionally to avoid spam
+                console.log(`ℹ️ Player left event received but tank not found (already cleaned up?): ${playerId}`);
+            }
         }
     }
 

@@ -178,11 +178,23 @@ class GameServer {
 
     handlePlayerInput(socket, data) {
         const player = this.playerManager.getPlayer(socket.id);
-        if (!player || player.isDead || !player.roomStake) return;
+        if (!player || player.isDead || !player.roomStake) {
+            // Reset velocity if player is dead or not in room
+            if (player) {
+                player.vx = 0;
+                player.vy = 0;
+            }
+            return;
+        }
 
         const { keys, mouseX, mouseY, isShooting } = data;
         const room = this.roomManager.getRoom(player.roomStake);
-        if (!room) return;
+        if (!room) {
+            // Reset velocity if room not found
+            player.vx = 0;
+            player.vy = 0;
+            return;
+        }
 
         // Update player position (movement)
         const moveSpeed = GameConfig.TANK.DEFAULT_SPEED + (player.stats.movementSpeed * GameConfig.TANK.MOVEMENT_SPEED_MULTIPLIER);
@@ -202,14 +214,9 @@ class GameServer {
             moveY *= 0.707;
         }
         
-        // Apply squirt velocity dampening (like bots)
-        const squirtDampening = 0.95; // Same as BOT_CONFIG.SQUIRT_DAMPENING
-        player.vx = player.vx * squirtDampening;
-        player.vy = player.vy * squirtDampening;
-        
-        // Apply movement input and squirt velocity
-        player.x += moveX + (player.vx * (1/60));
-        player.y += moveY + (player.vy * (1/60));
+        // Apply movement input (velocity is handled in updateGameState loop)
+        player.x += moveX;
+        player.y += moveY;
         
         // Clamp to canvas bounds
         const canvasWidth = player.canvasWidth || 1920;
@@ -425,6 +432,8 @@ class GameServer {
             room.players.delete(socketId);
             player.roomStake = null;
             player.isDead = true; // Mark as dead to prevent further input
+            player.vx = 0; // Reset velocity
+            player.vy = 0; // Reset velocity
             
             // Remove empty room
             this.roomManager.removeEmptyRoom(roomStake);
@@ -446,6 +455,39 @@ class GameServer {
         
         // Update health regeneration for all players
         this.playerManager.updateHealthRegeneration(deltaTime);
+
+        // Update velocity for all players in rooms (squirt effect dampening)
+        this.roomManager.getAllRooms().forEach((room, stake) => {
+            room.players.forEach((player) => {
+                if (player.isDead) {
+                    // Reset velocity if dead
+                    player.vx = 0;
+                    player.vy = 0;
+                    return;
+                }
+                
+                // Apply velocity dampening (like bots)
+                const squirtDampening = 0.95;
+                player.vx = player.vx * squirtDampening;
+                player.vy = player.vy * squirtDampening;
+                
+                // Stop very small velocities to prevent drift
+                const velocityThreshold = 0.1;
+                if (Math.abs(player.vx) < velocityThreshold) player.vx = 0;
+                if (Math.abs(player.vy) < velocityThreshold) player.vy = 0;
+                
+                // Apply velocity to position
+                player.x += player.vx * deltaTime;
+                player.y += player.vy * deltaTime;
+                
+                // Clamp positions
+                const canvasWidth = player.canvasWidth || 1920;
+                const canvasHeight = player.canvasHeight || 1080;
+                const tankSize = 30;
+                player.x = Math.max(tankSize, Math.min(canvasWidth - tankSize, player.x));
+                player.y = Math.max(tankSize, Math.min(canvasHeight - tankSize, player.y));
+            });
+        });
 
         // Update bullets, bots, and check collisions for each room
         this.roomManager.getAllRooms().forEach((room, stake) => {
