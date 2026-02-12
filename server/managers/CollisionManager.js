@@ -150,6 +150,103 @@ class CollisionManager {
     }
 
     /**
+     * Check tank-tank collisions (mutual body damage with push-back)
+     */
+    checkTankTankCollisions(room, playerManager, onPlayerDeath) {
+        const currentTime = Date.now();
+        const tankSize = 30;
+        const players = Array.from(room.players.values()).filter(p => !p.isDead);
+        
+        // Check all pairs of players
+        for (let i = 0; i < players.length; i++) {
+            for (let j = i + 1; j < players.length; j++) {
+                const player1 = players[i];
+                const player2 = players[j];
+                
+                const distance = Math.sqrt(
+                    Math.pow(player2.x - player1.x, 2) + 
+                    Math.pow(player2.y - player1.y, 2)
+                );
+                
+                if (distance < tankSize * 2) {
+                    // Collision detected - apply push-back first
+                    const dx = player2.x - player1.x;
+                    const dy = player2.y - player1.y;
+                    const dist = Math.max(distance, 0.1); // Avoid division by zero
+                    const normalX = dx / dist;
+                    const normalY = dy / dist;
+                    
+                    const minDistance = tankSize * 2;
+                    const overlap = minDistance - distance;
+                    
+                    if (overlap > 0) {
+                        // Apply immediate position correction to prevent overlap
+                        const separationForce = overlap * 0.5; // Immediate separation
+                        player1.x -= normalX * separationForce;
+                        player1.y -= normalY * separationForce;
+                        player2.x += normalX * separationForce;
+                        player2.y += normalY * separationForce;
+                        
+                        // Apply squirt effect - add velocity to both tanks (like bot-tank collision)
+                        // Use similar force as bot squirt for consistency
+                        const squirtForce = 150; // Same as BOT_CONFIG.SQUIRT_FORCE
+                        player1.vx -= normalX * squirtForce * (1/60); // Convert to per-frame velocity
+                        player1.vy -= normalY * squirtForce * (1/60);
+                        player2.vx += normalX * squirtForce * (1/60);
+                        player2.vy += normalY * squirtForce * (1/60);
+                        
+                        // Clamp positions
+                        const canvasWidth1 = player1.canvasWidth || 1920;
+                        const canvasHeight1 = player1.canvasHeight || 1080;
+                        const canvasWidth2 = player2.canvasWidth || 1920;
+                        const canvasHeight2 = player2.canvasHeight || 1080;
+                        
+                        player1.x = Math.max(tankSize, Math.min(canvasWidth1 - tankSize, player1.x));
+                        player1.y = Math.max(tankSize, Math.min(canvasHeight1 - tankSize, player1.y));
+                        player2.x = Math.max(tankSize, Math.min(canvasWidth2 - tankSize, player2.x));
+                        player2.y = Math.max(tankSize, Math.min(canvasHeight2 - tankSize, player2.y));
+                    }
+                    
+                    // Apply mutual body damage (with cooldown)
+                    // Player1 damages Player2
+                    const bodyDamage1 = GameConfig.TANK.DEFAULT_BODY_DAMAGE + (player1.stats.bodyDamage || 0);
+                    if (!player1.lastBodyDamageTime || !player1.lastBodyDamageTime[player2.id] || 
+                        (currentTime - (player1.lastBodyDamageTime[player2.id] || 0)) >= GameConfig.TANK.BODY_DAMAGE_COOLDOWN) {
+                        if (!player1.lastBodyDamageTime) player1.lastBodyDamageTime = {};
+                        const oldHealth2 = player2.health;
+                        player2.health = Math.max(0, player2.health - bodyDamage1);
+                        player1.lastBodyDamageTime[player2.id] = currentTime;
+                        
+                        // Check if player2 died
+                        if (player2.health <= 0 && oldHealth2 > 0) {
+                            player2.health = 0;
+                            player2.isDead = true;
+                            onPlayerDeath(player1, player2);
+                        }
+                    }
+                    
+                    // Player2 damages Player1
+                    const bodyDamage2 = GameConfig.TANK.DEFAULT_BODY_DAMAGE + (player2.stats.bodyDamage || 0);
+                    if (!player2.lastBodyDamageTime || !player2.lastBodyDamageTime[player1.id] || 
+                        (currentTime - (player2.lastBodyDamageTime[player1.id] || 0)) >= GameConfig.TANK.BODY_DAMAGE_COOLDOWN) {
+                        if (!player2.lastBodyDamageTime) player2.lastBodyDamageTime = {};
+                        const oldHealth1 = player1.health;
+                        player1.health = Math.max(0, player1.health - bodyDamage2);
+                        player2.lastBodyDamageTime[player1.id] = currentTime;
+                        
+                        // Check if player1 died
+                        if (player1.health <= 0 && oldHealth1 > 0) {
+                            player1.health = 0;
+                            player1.isDead = true;
+                            onPlayerDeath(player2, player1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Check bullet-bot collisions
      * Note: This is called AFTER checkBulletPlayerCollisions, so bullets that hit players
      * and ran out of penetration will already be removed. Bullets with remaining penetration

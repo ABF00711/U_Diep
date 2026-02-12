@@ -92,6 +92,8 @@ class GameServer {
             player.roomStake = stake;
             player.x = minX + Math.random() * (maxX - minX);
             player.y = minY + Math.random() * (maxY - minY);
+            player.vx = 0; // Reset velocity
+            player.vy = 0; // Reset velocity
             player.canvasWidth = spawnWidth;
             player.canvasHeight = spawnHeight;
             player.angle = 0;
@@ -200,8 +202,14 @@ class GameServer {
             moveY *= 0.707;
         }
         
-        player.x += moveX;
-        player.y += moveY;
+        // Apply squirt velocity dampening (like bots)
+        const squirtDampening = 0.95; // Same as BOT_CONFIG.SQUIRT_DAMPENING
+        player.vx = player.vx * squirtDampening;
+        player.vy = player.vy * squirtDampening;
+        
+        // Apply movement input and squirt velocity
+        player.x += moveX + (player.vx * (1/60));
+        player.y += moveY + (player.vy * (1/60));
         
         // Clamp to canvas bounds
         const canvasWidth = player.canvasWidth || 1920;
@@ -447,7 +455,13 @@ class GameServer {
             // Update bullets
             this.bulletManager.updateBullets(room, deltaTime);
             
-            // Check collisions (order matters: bot-tank first, then bullet collisions)
+            // Check collisions (order matters: tank-tank first, then bot-tank, then bullet collisions)
+            this.collisionManager.checkTankTankCollisions(
+                room,
+                this.playerManager,
+                (killer, victim) => this.handlePlayerDeath(killer, victim)
+            );
+            
             this.collisionManager.checkBotTankCollisions(
                 room,
                 this.playerManager,

@@ -16,7 +16,7 @@ class StatAllocationUI {
         this.container.innerHTML = `
             <div class="stat-allocation-panel">
                 <h2>Level Up! Upgrade your stats</h2>
-                <div class="stat-points-display">
+                <div class="stat-points-display">sa
                     <span id="statPointsAvailable">0</span> points available
                 </div>
                 <div class="stats-grid">

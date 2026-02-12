@@ -388,18 +388,6 @@ class NetworkManager {
         if (Math.random() < 0.1) {
             console.log('🔫 Bullet fired:', data.bulletId, 'by', data.ownerId);
         }
-        
-        let ownerTank;
-        if (data.ownerId === this.playerId) {
-            ownerTank = this.game.playerTank;
-        } else {
-            ownerTank = this.serverPlayers.get(data.ownerId);
-        }
-        
-        if (!ownerTank) {
-            console.warn('⚠️ Bullet owner not found:', data.ownerId);
-            return;
-        }
 
         // Check if bullet already exists (prevent duplicates)
         const existingBullet = this.game.bullets.find(b => b.id === data.bulletId);
@@ -411,7 +399,12 @@ class NetworkManager {
             return;
         }
 
-        // Create new bullet
+        // Determine bullet color based on owner (don't require owner tank to exist)
+        // Owner might have disconnected between firing and receiving the event, but we can still render the bullet
+        const isPlayerBullet = data.ownerId === this.playerId;
+        const bulletColor = isPlayerBullet ? GameConfig.COLORS.PLAYER_BULLET : GameConfig.COLORS.ENEMY_BULLET;
+
+        // Create new bullet (even if owner disconnected - server is authoritative)
         const bullet = new Bullet(
             data.x,
             data.y,
@@ -421,17 +414,25 @@ class NetworkManager {
                 size: data.size,
                 damage: data.damage,
                 penetration: data.penetration,
-                color: data.ownerId === this.playerId ? GameConfig.COLORS.PLAYER_BULLET : GameConfig.COLORS.ENEMY_BULLET,
+                color: bulletColor,
                 ownerId: data.ownerId,
-                isPlayer: data.ownerId === this.playerId,
-                lifetime: GameConfig.BULLET.DEFAULT_LIFETIME
+                isPlayer: isPlayerBullet,
+                lifetime: data.lifetime || GameConfig.BULLET.DEFAULT_LIFETIME
             }
         );
         
-        // Set bullet ID for tracking (Bullet class doesn't have id by default)
+        // Set bullet ID for tracking
         bullet.id = data.bulletId;
 
         this.game.bullets.push(bullet);
+        
+        // Debug: Log if owner not found (for debugging, but don't prevent bullet creation)
+        if (data.ownerId !== this.playerId && !this.serverPlayers.has(data.ownerId) && !this.game.playerTank?.id === data.ownerId) {
+            // Owner might have disconnected - this is okay, bullet will still render
+            if (Math.random() < 0.1) { // Only log occasionally to avoid spam
+                console.log('ℹ️ Bullet from disconnected player:', data.ownerId, '- bullet will still render');
+            }
+        }
     }
 
     handleKilledSelf(data) {
