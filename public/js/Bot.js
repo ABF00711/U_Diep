@@ -17,6 +17,7 @@ class Bot {
         this.y = y;
         this.type = type; // 'rectangle' or 'triangle'
         this.id = options.id || Math.random().toString(36).substr(2, 9);
+        this.serverBotId = options.serverBotId || null; // Track if managed by server
         
         // Bot properties based on type
         const botConfig = type === 'triangle' ? GameConfig.BOT.TRIANGLE : GameConfig.BOT.RECTANGLE;

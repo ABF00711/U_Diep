@@ -1,6 +1,32 @@
 // Game Server Module
 // Handles room management, player synchronization, and game state
 
+// Bot configuration (matches client Config.js)
+const BOT_CONFIG = {
+    RECTANGLE: {
+        HEALTH: 75,
+        MAX_HEALTH: 75,
+        BODY_DAMAGE: 8,
+        SIZE: 20,
+        XP_REWARD: 50
+    },
+    TRIANGLE: {
+        HEALTH: 150,
+        MAX_HEALTH: 150,
+        BODY_DAMAGE: 15,
+        SIZE: 25,
+        XP_REWARD: 100
+    },
+    DEFAULT_SPEED: 30,
+    DEFAULT_RESPAWN_TIME: 30000, // 30 seconds
+    DEFAULT_DAMAGE_COOLDOWN: 1000, // 1 second
+    DIRECTION_CHANGE_MIN: 2, // seconds
+    DIRECTION_CHANGE_MAX: 5, // seconds
+    RECTANGLE_SPAWN_CHANCE: 0.7, // 70%
+    SQUIRT_FORCE: 150,
+    SQUIRT_DAMPENING: 0.95
+};
+
 class GameServer {
     constructor(io) {
         this.io = io;
@@ -377,13 +403,59 @@ class GameServer {
     }
 
     createRoom(stake) {
-        return {
+        const room = {
             stake: stake,
             players: new Map(),
-            bots: [], // Server-managed bots
+            bots: new Map(), // Server-managed bots (botId -> bot data)
             bullets: new Map(), // Server-managed bullets (bulletId -> bullet data)
             createdAt: Date.now()
         };
+        
+        // Spawn initial bots for the room
+        this.spawnBotsForRoom(room, 20); // Default bot count
+        
+        return room;
+    }
+
+    spawnBotsForRoom(room, count) {
+        const spawnWidth = 1920; // Default canvas width
+        const spawnHeight = 1080; // Default canvas height
+        const margin = 50;
+        
+        for (let i = 0; i < count; i++) {
+            const type = Math.random() < BOT_CONFIG.RECTANGLE_SPAWN_CHANCE ? 'rectangle' : 'triangle';
+            const botConfig = type === 'triangle' ? BOT_CONFIG.TRIANGLE : BOT_CONFIG.RECTANGLE;
+            
+            const bot = {
+                id: `bot_${room.stake}_${Date.now()}_${Math.random()}`,
+                type: type,
+                x: margin + Math.random() * (spawnWidth - margin * 2),
+                y: margin + Math.random() * (spawnHeight - margin * 2),
+                health: botConfig.HEALTH,
+                maxHealth: botConfig.MAX_HEALTH,
+                bodyDamage: botConfig.BODY_DAMAGE,
+                size: botConfig.SIZE,
+                xpReward: botConfig.XP_REWARD,
+                speed: BOT_CONFIG.DEFAULT_SPEED,
+                vx: 0,
+                vy: 0,
+                moveDirection: Math.random() * Math.PI * 2,
+                directionChangeTime: 0,
+                directionChangeInterval: BOT_CONFIG.DIRECTION_CHANGE_MIN + 
+                    Math.random() * (BOT_CONFIG.DIRECTION_CHANGE_MAX - BOT_CONFIG.DIRECTION_CHANGE_MIN),
+                rotation: Math.random() * Math.PI * 2,
+                rotationSpeed: (Math.random() - 0.5) * 0.05,
+                isDead: false,
+                deathTime: 0,
+                respawnTime: BOT_CONFIG.DEFAULT_RESPAWN_TIME,
+                damageCooldown: BOT_CONFIG.DEFAULT_DAMAGE_COOLDOWN,
+                lastDamageTime: {} // Map<playerId, timestamp>
+            };
+            
+            room.bots.set(bot.id, bot);
+        }
+        
+        console.log(`Spawned ${count} bots for room $${room.stake}`);
     }
 
     createBullet(player) {
@@ -571,6 +643,8 @@ class GameServer {
     }
 
     updateGameState() {
+        const deltaTime = 1/60; // 60fps
+        
         // Update health regeneration for all players
         this.players.forEach((player, playerId) => {
             if (player.isDead || !player.roomStake) return;
@@ -578,13 +652,19 @@ class GameServer {
             // Health regeneration (if stat allocated)
             const healthRegen = player.stats.healthRegen || 0;
             if (healthRegen > 0 && player.health < player.maxHealth) {
-                const regenAmount = healthRegen * (1/60); // Per frame (60fps)
+                const regenAmount = healthRegen * deltaTime;
                 player.health = Math.min(player.maxHealth, player.health + regenAmount);
             }
         });
 
-        // Update bullets and check collisions
+        // Update bullets, bots, and check collisions
         this.rooms.forEach((room, stake) => {
+            // Update bots
+            this.updateBots(room, deltaTime);
+            
+            // Check bot-tank collisions
+            this.checkBotTankCollisions(room);
+            
             const bulletsToRemove = [];
             
             room.bullets.forEach((bullet, bulletId) => {
@@ -643,11 +723,241 @@ class GameServer {
                         }
                     }
                 });
+                
+                // Check collision with bots (after updating bullet position)
+                if (!bulletsToRemove.includes(bulletId)) {
+                    room.bots.forEach((bot, botId) => {
+                        if (bot.isDead) return;
+                        if (bullet.hitTargets.has(botId)) return; // Already hit this bot
+                        
+                        const distance = Math.sqrt(
+                            Math.pow(bullet.x - bot.x, 2) + 
+                            Math.pow(bullet.y - bot.y, 2)
+                        );
+                        
+                        if (distance < bot.size + bullet.size) {
+                            // Hit bot
+                            bullet.hitTargets.add(botId);
+                            
+                            const oldBotHealth = bot.health;
+                            bot.health = Math.max(0, bot.health - bullet.damage);
+                            
+                            // Check if bot died
+                            if (bot.health <= 0 && oldBotHealth > 0) {
+                                bot.health = 0;
+                                bot.isDead = true;
+                                bot.deathTime = 0;
+                                
+                                // Give XP to bullet owner
+                                const attacker = this.players.get(bullet.ownerId);
+                                if (attacker && attacker.roomStake === room.stake) {
+                                    attacker.xp += bot.xpReward;
+                                    while (attacker.xp >= attacker.xpToNextLevel) {
+                                        attacker.xp -= attacker.xpToNextLevel;
+                                        attacker.level++;
+                                        attacker.statPoints++;
+                                        attacker.pendingStatAllocation = true;
+                                        attacker.xpToNextLevel = Math.floor(attacker.xpToNextLevel * 1.2);
+                                    }
+                                    
+                                    // Notify attacker
+                                    attacker.socket.emit('botKilled', {
+                                        botId: bot.id,
+                                        xpReward: bot.xpReward,
+                                        newLevel: attacker.level,
+                                        newXP: attacker.xp,
+                                        xpToNextLevel: attacker.xpToNextLevel,
+                                        statPoints: attacker.statPoints
+                                    });
+                                }
+                            }
+                            
+                            // Decrease penetration
+                            bullet.penetration--;
+                            if (bullet.penetration <= 0) {
+                                bulletsToRemove.push(bulletId);
+                            }
+                        }
+                    });
+                }
             });
             
             // Remove expired/used bullets
             bulletsToRemove.forEach(bulletId => {
                 room.bullets.delete(bulletId);
+            });
+        });
+    }
+
+    updateBots(room, deltaTime) {
+        // Use average canvas size from players in room, or default
+        let canvasWidth = 1920;
+        let canvasHeight = 1080;
+        if (room.players.size > 0) {
+            const firstPlayer = Array.from(room.players.values())[0];
+            canvasWidth = firstPlayer.canvasWidth || 1920;
+            canvasHeight = firstPlayer.canvasHeight || 1080;
+        }
+        
+        const margin = 50;
+        const minX = margin;
+        const maxX = canvasWidth - margin;
+        const minY = margin;
+        const maxY = canvasHeight - margin;
+        
+        room.bots.forEach((bot, botId) => {
+            if (bot.isDead) {
+                // Handle respawn
+                bot.deathTime += deltaTime * 1000; // Convert to milliseconds
+                if (bot.deathTime >= bot.respawnTime) {
+                    // Respawn bot
+                    bot.x = minX + Math.random() * (maxX - minX);
+                    bot.y = minY + Math.random() * (maxY - minY);
+                    bot.health = bot.maxHealth;
+                    bot.isDead = false;
+                    bot.deathTime = 0;
+                    bot.moveDirection = Math.random() * Math.PI * 2;
+                    bot.rotation = Math.random() * Math.PI * 2;
+                    bot.rotationSpeed = (Math.random() - 0.5) * 0.05;
+                    bot.vx = 0;
+                    bot.vy = 0;
+                }
+                return;
+            }
+            
+            // Update rotation
+            bot.rotation += bot.rotationSpeed * deltaTime * 60;
+            
+            // Update movement direction periodically
+            bot.directionChangeTime += deltaTime;
+            if (bot.directionChangeTime >= bot.directionChangeInterval) {
+                bot.moveDirection = Math.random() * Math.PI * 2;
+                bot.directionChangeTime = 0;
+                bot.directionChangeInterval = BOT_CONFIG.DIRECTION_CHANGE_MIN + 
+                    Math.random() * (BOT_CONFIG.DIRECTION_CHANGE_MAX - BOT_CONFIG.DIRECTION_CHANGE_MIN);
+            }
+            
+            // Move bot (combine random movement with collision velocity)
+            const randomVx = Math.cos(bot.moveDirection) * bot.speed;
+            const randomVy = Math.sin(bot.moveDirection) * bot.speed;
+            
+            // Apply dampening to collision velocity
+            bot.vx = bot.vx * BOT_CONFIG.SQUIRT_DAMPENING + randomVx * (1 - BOT_CONFIG.SQUIRT_DAMPENING);
+            bot.vy = bot.vy * BOT_CONFIG.SQUIRT_DAMPENING + randomVy * (1 - BOT_CONFIG.SQUIRT_DAMPENING);
+            
+            // Update position
+            bot.x += bot.vx * deltaTime;
+            bot.y += bot.vy * deltaTime;
+            
+            // Clamp to bounds
+            bot.x = Math.max(bot.size, Math.min(maxX - bot.size, bot.x));
+            bot.y = Math.max(bot.size, Math.min(maxY - bot.size, bot.y));
+            
+            // Bounce off boundaries
+            if (bot.x <= bot.size || bot.x >= maxX - bot.size) {
+                bot.vx *= -0.5;
+            }
+            if (bot.y <= bot.size || bot.y >= maxY - bot.size) {
+                bot.vy *= -0.5;
+            }
+        });
+    }
+
+    checkBotTankCollisions(room) {
+        const currentTime = Date.now();
+        const tankSize = 30;
+        
+        room.players.forEach((player, playerId) => {
+            if (player.isDead) return;
+            
+            room.bots.forEach((bot, botId) => {
+                if (bot.isDead) return;
+                
+                const distance = Math.sqrt(
+                    Math.pow(bot.x - player.x, 2) + 
+                    Math.pow(bot.y - player.y, 2)
+                );
+                
+                if (distance < bot.size + tankSize) {
+                    // Collision detected
+                    // Apply push-back with squirt effect
+                    const dx = bot.x - player.x;
+                    const dy = bot.y - player.y;
+                    const dist = Math.max(distance, 0.1); // Avoid division by zero
+                    const normalX = dx / dist;
+                    const normalY = dy / dist;
+                    
+                    const minDistance = bot.size + tankSize;
+                    const overlap = minDistance - distance;
+                    
+                    if (overlap > 0) {
+                        // Push bot away (squirt effect)
+                        bot.vx += normalX * BOT_CONFIG.SQUIRT_FORCE * (1/60);
+                        bot.vy += normalY * BOT_CONFIG.SQUIRT_FORCE * (1/60);
+                        
+                        // Push player back slightly
+                        player.x -= normalX * overlap * 0.3;
+                        player.y -= normalY * overlap * 0.3;
+                        
+                        // Clamp positions
+                        const canvasWidth = player.canvasWidth || 1920;
+                        const canvasHeight = player.canvasHeight || 1080;
+                        player.x = Math.max(tankSize, Math.min(canvasWidth - tankSize, player.x));
+                        player.y = Math.max(tankSize, Math.min(canvasHeight - tankSize, player.y));
+                    }
+                    
+                    // Apply body damage (bot damages player)
+                    if (!bot.lastDamageTime[playerId] || 
+                        (currentTime - bot.lastDamageTime[playerId]) >= bot.damageCooldown) {
+                        const oldHealth = player.health;
+                        player.health = Math.max(0, player.health - bot.bodyDamage);
+                        bot.lastDamageTime[playerId] = currentTime;
+                        
+                        // Check if player died from bot
+                        if (player.health <= 0 && oldHealth > 0) {
+                            player.health = 0;
+                            player.isDead = true;
+                            // No killer for bot death - player just dies
+                            this.handlePlayerDeath(null, player);
+                        }
+                    }
+                    
+                    // Player damages bot (body damage)
+                    const playerBodyDamage = 3 + (player.stats.bodyDamage || 0); // Base + stat
+                    if (!bot.lastDamageTime[`player_${playerId}`] || 
+                        (currentTime - (bot.lastDamageTime[`player_${playerId}`] || 0)) >= bot.damageCooldown) {
+                        const oldBotHealth = bot.health;
+                        bot.health = Math.max(0, bot.health - playerBodyDamage);
+                        bot.lastDamageTime[`player_${playerId}`] = currentTime;
+                        
+                        // Check if bot died
+                        if (bot.health <= 0 && oldBotHealth > 0) {
+                            bot.health = 0;
+                            bot.isDead = true;
+                            bot.deathTime = 0;
+                            
+                            // Give XP to player
+                            player.xp += bot.xpReward;
+                            while (player.xp >= player.xpToNextLevel) {
+                                player.xp -= player.xpToNextLevel;
+                                player.level++;
+                                player.statPoints++;
+                                player.pendingStatAllocation = true;
+                                player.xpToNextLevel = Math.floor(player.xpToNextLevel * 1.2);
+                            }
+                            
+                            // Notify player
+                            player.socket.emit('botKilled', {
+                                botId: bot.id,
+                                xpReward: bot.xpReward,
+                                newLevel: player.level,
+                                newXP: player.xp,
+                                xpToNextLevel: player.xpToNextLevel,
+                                statPoints: player.statPoints
+                            });
+                        }
+                    }
+                }
             });
         });
     }
@@ -669,9 +979,24 @@ class GameServer {
                     xpToNextLevel: p.xpToNextLevel
                 }));
 
-            if (players.length > 0) {
+            // Get bot states
+            const bots = Array.from(room.bots.values())
+                .filter(b => !b.isDead)
+                .map(b => ({
+                    botId: b.id,
+                    type: b.type,
+                    x: b.x,
+                    y: b.y,
+                    health: b.health,
+                    maxHealth: b.maxHealth,
+                    size: b.size,
+                    rotation: b.rotation
+                }));
+
+            if (players.length > 0 || bots.length > 0) {
                 this.io.to(`room_${stake}`).emit('gameState', {
                     players: players,
+                    bots: bots,
                     timestamp: Date.now()
                 });
             }

@@ -169,8 +169,11 @@ class Game {
         // Enemy tanks will be created by NetworkManager when other players join
         // No need to create test enemy tanks in multiplayer mode
 
-        // Generate bots (replace pellets)
-        this.generateBots(GameConfig.GAME.DEFAULT_BOT_COUNT);
+        // Bots are now server-managed - don't generate locally when connected
+        if (!this.networkManager.isConnected()) {
+            // Only generate bots in offline mode
+            this.generateBots(GameConfig.GAME.DEFAULT_BOT_COUNT);
+        }
     }
 
     loadBotSprites() {
@@ -384,12 +387,25 @@ class Game {
             return true; // Keep alive tanks
         });
 
-        // Update bots
-        this.bots = this.bots.filter(bot => {
-            if (!bot) return false; // Remove null/undefined bots
-            bot.update(deltaTime, this.canvas.width, this.canvas.height);
-            return true; // Keep bot
-        });
+        // Update bots (server-managed when connected)
+        if (this.networkManager.isConnected()) {
+            // Server manages bots - just filter dead ones
+            this.bots = this.bots.filter(bot => {
+                if (!bot || bot.isDead) return false;
+                // Update rotation for visual effect (server handles position)
+                if (bot.rotationSpeed !== undefined) {
+                    bot.rotation += bot.rotationSpeed * deltaTime * 60;
+                }
+                return true;
+            });
+        } else {
+            // Offline mode - update bots locally
+            this.bots = this.bots.filter(bot => {
+                if (!bot) return false;
+                bot.update(deltaTime, this.canvas.width, this.canvas.height);
+                return true;
+            });
+        }
 
         // Update bullets
         this.bullets = this.bullets.filter(bullet => {
@@ -408,19 +424,23 @@ class Game {
                 return false; // Remove bullet
             }
             
-            // Check collisions with bots
-            const shouldRemoveBot = this.collisionManager.checkBulletBotCollision(bullet, this.bots);
-            if (shouldRemoveBot) {
-                return false; // Remove bullet
+            // Check collisions with bots (only in offline mode - server handles when connected)
+            if (!this.networkManager.isConnected()) {
+                const shouldRemoveBot = this.collisionManager.checkBulletBotCollision(bullet, this.bots);
+                if (shouldRemoveBot) {
+                    return false; // Remove bullet
+                }
             }
+            // Server handles bot-bullet collisions when connected
             
             return true;
         });
 
-        // Check tank collision with bots (mutual body damage)
-        if (this.playerTank) {
+        // Check tank collision with bots (only in offline mode - server handles when connected)
+        if (this.playerTank && !this.networkManager.isConnected()) {
             this.collisionManager.checkTankBotCollision(this.playerTank, this.bots);
         }
+        // Server handles tank-bot collisions when connected
 
         // Check tank vs tank collisions (mutual body damage) - only alive tanks
         const allTanks = [this.playerTank, ...this.enemyTanks].filter(t => t && !t.isDead);

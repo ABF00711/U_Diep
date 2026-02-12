@@ -129,6 +129,11 @@ class NetworkManager {
         this.socket.on('playerDied', (data) => {
             this.handlePlayerDied(data);
         });
+
+        // Bot events
+        this.socket.on('botKilled', (data) => {
+            this.handleBotKilled(data);
+        });
     }
 
     joinRoom(stake, playerName, balance) {
@@ -263,7 +268,12 @@ class NetworkManager {
     handleGameState(data) {
         // Debug: Log game state updates (occasionally)
         if (Math.random() < 0.01) { // 1% chance
-            console.log('📡 Game state update:', data.players.length, 'players');
+            console.log('📡 Game state update:', data.players.length, 'players', data.bots?.length || 0, 'bots');
+        }
+        
+        // Update bots from server (server is authoritative)
+        if (data.bots) {
+            this.updateServerBots(data.bots);
         }
         
         // Update server players' positions and health (server is authoritative)
@@ -521,6 +531,76 @@ class NetworkManager {
         }
         
         // IMPORTANT: Do NOT disconnect - stay in game and continue playing!
+    }
+
+    updateServerBots(serverBots) {
+        // Create a map of server bot IDs for quick lookup
+        const serverBotIds = new Set(serverBots.map(b => b.botId));
+        
+        // Remove bots that no longer exist on server
+        this.game.bots = this.game.bots.filter(bot => {
+            if (bot.serverBotId && !serverBotIds.has(bot.serverBotId)) {
+                return false; // Remove bot that's not on server anymore
+            }
+            return true;
+        });
+        
+        // Update or create bots from server data
+        serverBots.forEach(botData => {
+            let bot = this.game.bots.find(b => b.serverBotId === botData.botId);
+            
+            if (!bot) {
+                // Create new bot from server data
+                bot = new Bot(
+                    botData.x,
+                    botData.y,
+                    botData.type,
+                    {
+                        id: botData.botId,
+                        serverBotId: botData.botId,
+                        health: botData.health,
+                        maxHealth: botData.maxHealth,
+                        size: botData.size
+                    }
+                );
+                bot.rotation = botData.rotation || 0;
+                bot.rotationSpeed = (Math.random() - 0.5) * 0.05; // Random rotation speed for visual effect
+                this.game.bots.push(bot);
+            } else {
+                // Update existing bot (server is authoritative)
+                bot.x = botData.x;
+                bot.y = botData.y;
+                bot.health = botData.health;
+                bot.maxHealth = botData.maxHealth;
+                bot.rotation = botData.rotation;
+                bot.isDead = false; // Server only sends alive bots
+            }
+        });
+    }
+
+    handleBotKilled(data) {
+        // We killed a bot - get XP reward
+        console.log('✅ Bot killed:', data);
+        
+        if (this.game.playerTank && data.xpReward !== undefined) {
+            const oldLevel = this.game.playerTank.level;
+            this.game.playerTank.xp = data.newXP;
+            this.game.playerTank.level = data.newLevel;
+            this.game.playerTank.xpToNextLevel = data.xpToNextLevel || this.game.playerTank.xpToNextLevel;
+            
+            // Check if we leveled up
+            if (data.newLevel > oldLevel) {
+                const levelDiff = data.newLevel - oldLevel;
+                this.game.playerTank.statPoints += levelDiff;
+                this.game.playerTank.pendingStatAllocation = true;
+            }
+            
+            // Show message
+            this.game.showMessage(
+                `Killed bot! +${data.xpReward} XP`,
+                GameConfig.UI.MESSAGE_DURATION
+            );
+        }
     }
 
     handlePlayerDied(data) {
