@@ -70,8 +70,20 @@ class GameServer {
         // Check if player already in a room
         const existingPlayer = this.playerManager.getPlayer(socket.id);
         if (existingPlayer && existingPlayer.roomStake) {
-            socket.emit('joinRoomError', { message: 'Already in a room' });
-            return;
+            // If player is trying to join the same room, reject
+            if (existingPlayer.roomStake === stake) {
+                socket.emit('joinRoomError', { message: 'Already in this room' });
+                return;
+            }
+            // If different room, remove from old room first (room switching)
+            console.log(`Player ${socket.id} switching rooms: $${existingPlayer.roomStake} -> $${stake}`);
+            this.removePlayerFromRoom(socket.id);
+            // Re-fetch player after removal (roomStake should now be null)
+            const playerAfterRemoval = this.playerManager.getPlayer(socket.id);
+            if (!playerAfterRemoval) {
+                socket.emit('joinRoomError', { message: 'Failed to switch rooms' });
+                return;
+            }
         }
         
         // Get or create room
@@ -91,14 +103,26 @@ class GameServer {
         const spawnWidth = canvasWidth || 1920;
         const spawnHeight = canvasHeight || 1080;
         
-        // Reuse existing player or create new one
-        let player = existingPlayer;
+        // Get player (after potential room switch cleanup)
+        let player = this.playerManager.getPlayer(socket.id);
+        
         if (player && !player.roomStake) {
-            // Player exists but was removed from room (died/disconnected) - reset for rejoin
+            // Player exists but was removed from room (died/disconnected/switched) - reset for rejoin
+            // CRITICAL: Ensure player is fully removed from any old Socket.io rooms first
+            if (player.socket) {
+                // Leave all possible room sockets (safety check to prevent duplicate subscriptions)
+                GameConfig.ECONOMY.ROOM_STAKES.forEach(possibleStake => {
+                    player.socket.leave(`room_${possibleStake}`);
+                });
+            }
+            
             player.isDead = false;
             player.health = GameConfig.TANK.DEFAULT_HEALTH;
             player.maxHealth = GameConfig.TANK.DEFAULT_MAX_HEALTH;
-            player.roomStake = stake;
+            
+            // Recalculate maxHealth based on stats (preserve stat allocations)
+            this.playerManager.applyStatChanges(player);
+            
             player.x = minX + Math.random() * (maxX - minX);
             player.y = minY + Math.random() * (maxY - minY);
             player.vx = 0; // Reset velocity
@@ -107,7 +131,7 @@ class GameServer {
             player.canvasHeight = spawnHeight;
             player.angle = 0;
             // Keep level, XP, stats, balance - they continue with progress
-            console.log(`Player ${socket.id} rejoining room $${stake} (level ${player.level})`);
+            console.log(`Player ${socket.id} joining room $${stake} (level ${player.level})`);
         } else if (!player) {
             // Create new player
             player = this.playerManager.createPlayer(
@@ -129,6 +153,8 @@ class GameServer {
         if (!room.players.has(socket.id)) {
             room.players.set(socket.id, player);
         }
+        
+        // Join Socket.io room (only after ensuring old room is left)
         socket.join(`room_${stake}`);
 
         // Send initial game state
@@ -471,7 +497,26 @@ class GameServer {
         const room = this.roomManager.getRoom(roomStake);
         
         if (room) {
+            // Remove player from room's players map
             room.players.delete(socketId);
+            
+            // Remove player's bullets from room (clean up bullets when leaving)
+            const bulletsToRemove = [];
+            room.bullets.forEach((bullet, bulletId) => {
+                if (bullet.ownerId === socketId) {
+                    bulletsToRemove.push(bulletId);
+                }
+            });
+            bulletsToRemove.forEach(bulletId => {
+                room.bullets.delete(bulletId);
+            });
+            
+            // Leave Socket.io room (CRITICAL: prevents receiving updates from old room)
+            if (player.socket) {
+                player.socket.leave(`room_${roomStake}`);
+            }
+            
+            // Clear player's room stake and mark as dead
             player.roomStake = null;
             player.isDead = true; // Mark as dead to prevent further input
             player.vx = 0; // Reset velocity
