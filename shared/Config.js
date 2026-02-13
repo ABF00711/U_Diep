@@ -25,7 +25,7 @@ const GameConfig = {
         DEFAULT_BODY_DAMAGE: 3,            // Base body damage (added to stat value)
         BASE_RELOAD_TIME: 1000,            // milliseconds
         BODY_DAMAGE_COOLDOWN: 1000,        // milliseconds
-        MOVEMENT_SPEED_MULTIPLIER: 0.1,    // Stat multiplier
+        MOVEMENT_SPEED_MULTIPLIER: 20,    // Stat multiplier
         RELOAD_MULTIPLIER: 100,            // Stat multiplier (milliseconds per point - reduces reload time)
         MAX_STAT_POINTS: 7,                // Maximum points per stat
         COLLISION_PUSH_FORCE: 0.5          // Push-back force multiplier (0-1, higher = stronger push)
