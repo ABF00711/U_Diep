@@ -384,12 +384,19 @@ class NetworkManager {
                 // Update enemy player
                 const tank = this.serverPlayers.get(playerData.playerId);
                 if (tank) {
-                    // Interpolate for smooth movement of other players
-                    const lerp = 0.5; // Higher lerp for smoother enemy movement
-                    tank.x += (playerData.x - tank.x) * lerp;
-                    tank.y += (playerData.y - tank.y) * lerp;
+                    // Store server-authoritative position (for interpolation in game loop)
+                    // Don't lerp here - let game.js handle smooth interpolation via renderX/renderY
+                    tank.x = playerData.x;
+                    tank.y = playerData.y;
                     tank.angle = playerData.angle;
                     tank.level = playerData.level || tank.level;
+                    
+                    // Initialize render position if not set (for smooth visual interpolation)
+                    if (tank.renderX === undefined) {
+                        tank.renderX = playerData.x;
+                        tank.renderY = playerData.y;
+                    }
+                    
                     // Health is server-authoritative - always use server value
                     const oldEnemyHealth = tank.health;
                     tank.health = playerData.health;
@@ -529,6 +536,10 @@ class NetworkManager {
         tank.health = playerData.health || 100;
         tank.maxHealth = playerData.maxHealth || 100;
         tank.angle = playerData.angle || 0;
+        
+        // Initialize render position for smooth interpolation (same as local player)
+        tank.renderX = playerData.x;
+        tank.renderY = playerData.y;
 
         this.serverPlayers.set(playerId, tank);
         this.game.enemyTanks.push(tank);

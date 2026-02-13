@@ -497,6 +497,18 @@ class Game {
             
             // Update camera (follows render position, not server position)
             this.updateCamera(deltaTime);
+            
+            // Interpolate enemy tank render positions (for smooth visual movement)
+            // This prevents jittery movement when collisions cause rapid server position updates
+            if (this.networkManager.isConnected()) {
+                const interpolationSpeed = GameConfig.GAME.PLAYER_INTERPOLATION_SPEED;
+                this.enemyTanks.forEach(tank => {
+                    if (tank && !tank.isDead && tank.renderX !== undefined) {
+                        tank.renderX += (tank.x - tank.renderX) * interpolationSpeed;
+                        tank.renderY += (tank.y - tank.renderY) * interpolationSpeed;
+                    }
+                });
+            }
             // Send input to server
             if (this.networkManager.isConnected()) {
                 const mousePos = this.input.getMousePosition();
