@@ -358,12 +358,12 @@ class Game {
             messageEl.id = 'gameMessage';
             messageEl.style.cssText = `
                 position: absolute;
-                top: 50%;
+                top: 20px;
                 left: 50%;
-                transform: translate(-50%, -50%);
+                transform: translateX(-50%);
                 background: rgba(0, 0, 0, 0.9);
                 color: #fff;
-                padding: 20px 40px;
+                padding: 15px 30px;
                 border-radius: 8px;
                 font-size: 18px;
                 z-index: 1000;
