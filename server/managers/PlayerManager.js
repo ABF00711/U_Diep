@@ -19,6 +19,8 @@ class PlayerManager {
             roomStake: null,
             x: x,
             y: y,
+            vx: 0, // Velocity for squirt effect
+            vy: 0, // Velocity for squirt effect
             canvasWidth: canvasWidth,
             canvasHeight: canvasHeight,
             angle: 0,
@@ -42,6 +44,7 @@ class PlayerManager {
             statPoints: 0,
             pendingStatAllocation: false,
             lastShotTime: 0,
+            lastBodyDamageTime: {}, // Track last body damage time per target (targetId -> timestamp)
             isDead: false,
             balance: balance || GameConfig.ECONOMY.INITIAL_BALANCE
         };

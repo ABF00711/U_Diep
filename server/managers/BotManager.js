@@ -9,8 +9,8 @@ class BotManager {
      * Spawn bots for a room
      */
     spawnBotsForRoom(room, count) {
-        const spawnWidth = 1920; // Default canvas width
-        const spawnHeight = 1080; // Default canvas height
+        const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+        const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
         const margin = 50;
         
         for (let i = 0; i < count; i++) {
@@ -20,8 +20,8 @@ class BotManager {
             const bot = {
                 id: `bot_${room.stake}_${Date.now()}_${Math.random()}`,
                 type: type,
-                x: margin + Math.random() * (spawnWidth - margin * 2),
-                y: margin + Math.random() * (spawnHeight - margin * 2),
+                x: margin + Math.random() * (worldWidth - margin * 2),
+                y: margin + Math.random() * (worldHeight - margin * 2),
                 health: botConfig.HEALTH,
                 maxHealth: botConfig.MAX_HEALTH,
                 bodyDamage: botConfig.BODY_DAMAGE,
@@ -53,20 +53,14 @@ class BotManager {
      * Update all bots in a room
      */
     updateBots(room, deltaTime) {
-        // Use average canvas size from players in room, or default
-        let canvasWidth = 1920;
-        let canvasHeight = 1080;
-        if (room.players.size > 0) {
-            const firstPlayer = Array.from(room.players.values())[0];
-            canvasWidth = firstPlayer.canvasWidth || 1920;
-            canvasHeight = firstPlayer.canvasHeight || 1080;
-        }
-        
+        // Use world bounds
+        const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+        const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
         const margin = 50;
         const minX = margin;
-        const maxX = canvasWidth - margin;
+        const maxX = worldWidth - margin;
         const minY = margin;
-        const maxY = canvasHeight - margin;
+        const maxY = worldHeight - margin;
         
         room.bots.forEach((bot) => {
             if (bot.isDead) {

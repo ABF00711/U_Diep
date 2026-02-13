@@ -80,7 +80,13 @@ const GameConfig = {
         MAX_DELTA_TIME: 0.1,               // Cap deltaTime to prevent large jumps
         CANVAS_MIN_WIDTH: 800,
         CANVAS_MIN_HEIGHT: 600,
-        SPAWN_MARGIN: 50                   // Margin from edges when spawning
+        SPAWN_MARGIN: 50,                  // Margin from edges when spawning
+        GRID_SIZE: 50,                     // Grid cell size in pixels (like diep.io)
+        WORLD_WIDTH: 5000,                 // World width in pixels (larger than viewport)
+        WORLD_HEIGHT: 5000,                // World height in pixels (larger than viewport)
+        CAMERA_SMOOTH_FACTOR: 0.15,        // Camera smoothing factor (0-1, higher = faster follow, like diep.io)
+        CAMERA_DEAD_ZONE: 50,              // Dead zone radius in pixels (camera only moves if player is this far from center)
+        PLAYER_INTERPOLATION_SPEED: 0.2    // Player position interpolation speed (0-1, higher = faster, smoother movement)
     },
 
     // Colors
@@ -95,6 +101,7 @@ const GameConfig = {
         BOT_RECTANGLE_BORDER: '#D4AF37',    // Darker gold square border
         ARENA_BACKGROUND: '#16213e',
         ARENA_BORDER: '#0f3460',
+        GRID_LINE: '#1a2a3a',               // Grid line color (subtle, darker than background)
         HEALTH_BAR_BG: '#333',
         HEALTH_BAR_HIGH: '#4caf50',         // > 50%
         HEALTH_BAR_MEDIUM: '#ff9800',      // 25-50%

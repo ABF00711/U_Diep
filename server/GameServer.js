@@ -48,6 +48,11 @@ class GameServer {
             socket.on('playerDamage', (data) => {
                 this.handlePlayerDamage(socket, data);
             });
+
+            // Request room player counts
+            socket.on('requestRoomCounts', () => {
+                this.handleRequestRoomCounts(socket);
+            });
         });
     }
 
@@ -65,38 +70,68 @@ class GameServer {
         // Check if player already in a room
         const existingPlayer = this.playerManager.getPlayer(socket.id);
         if (existingPlayer && existingPlayer.roomStake) {
-            socket.emit('joinRoomError', { message: 'Already in a room' });
-            return;
+            // If player is trying to join the same room, reject
+            if (existingPlayer.roomStake === stake) {
+                socket.emit('joinRoomError', { message: 'Already in this room' });
+                return;
+            }
+            // If different room, remove from old room first (room switching)
+            console.log(`Player ${socket.id} switching rooms: $${existingPlayer.roomStake} -> $${stake}`);
+            this.removePlayerFromRoom(socket.id);
+            // Re-fetch player after removal (roomStake should now be null)
+            const playerAfterRemoval = this.playerManager.getPlayer(socket.id);
+            if (!playerAfterRemoval) {
+                socket.emit('joinRoomError', { message: 'Failed to switch rooms' });
+                return;
+            }
         }
         
         // Get or create room
         const room = this.roomManager.getOrCreateRoom(stake);
 
-        // Calculate spawn position
-        const spawnWidth = canvasWidth || 1920;
-        const spawnHeight = canvasHeight || 1080;
+        // Calculate spawn position in world coordinates
+        const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+        const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
         const tankSize = 30;
         const margin = 100;
         const minX = margin + tankSize;
-        const maxX = Math.max(spawnWidth - margin - tankSize, minX + 100);
+        const maxX = Math.max(worldWidth - margin - tankSize, minX + 100);
         const minY = margin + tankSize;
-        const maxY = Math.max(spawnHeight - margin - tankSize, minY + 100);
+        const maxY = Math.max(worldHeight - margin - tankSize, minY + 100);
         
-        // Reuse existing player or create new one
-        let player = existingPlayer;
+        // Store canvas dimensions for player (used for UI/viewport, not world bounds)
+        const spawnWidth = canvasWidth || 1920;
+        const spawnHeight = canvasHeight || 1080;
+        
+        // Get player (after potential room switch cleanup)
+        let player = this.playerManager.getPlayer(socket.id);
+        
         if (player && !player.roomStake) {
-            // Player exists but was removed from room (died/disconnected) - reset for rejoin
+            // Player exists but was removed from room (died/disconnected/switched) - reset for rejoin
+            // CRITICAL: Ensure player is fully removed from any old Socket.io rooms first
+            if (player.socket) {
+                // Leave all possible room sockets (safety check to prevent duplicate subscriptions)
+                GameConfig.ECONOMY.ROOM_STAKES.forEach(possibleStake => {
+                    player.socket.leave(`room_${possibleStake}`);
+                });
+            }
+            
             player.isDead = false;
             player.health = GameConfig.TANK.DEFAULT_HEALTH;
             player.maxHealth = GameConfig.TANK.DEFAULT_MAX_HEALTH;
-            player.roomStake = stake;
+            
+            // Recalculate maxHealth based on stats (preserve stat allocations)
+            this.playerManager.applyStatChanges(player);
+            
             player.x = minX + Math.random() * (maxX - minX);
             player.y = minY + Math.random() * (maxY - minY);
+            player.vx = 0; // Reset velocity
+            player.vy = 0; // Reset velocity
             player.canvasWidth = spawnWidth;
             player.canvasHeight = spawnHeight;
             player.angle = 0;
             // Keep level, XP, stats, balance - they continue with progress
-            console.log(`Player ${socket.id} rejoining room $${stake} (level ${player.level})`);
+            console.log(`Player ${socket.id} joining room $${stake} (level ${player.level})`);
         } else if (!player) {
             // Create new player
             player = this.playerManager.createPlayer(
@@ -118,6 +153,8 @@ class GameServer {
         if (!room.players.has(socket.id)) {
             room.players.set(socket.id, player);
         }
+        
+        // Join Socket.io room (only after ensuring old room is left)
         socket.join(`room_${stake}`);
 
         // Send initial game state
@@ -172,15 +209,51 @@ class GameServer {
         });
 
         console.log(`Player ${socket.id} joined $${stake} room. Total players: ${room.players.size}`);
+        
+        // Broadcast updated room counts to all clients (so they can see player counts)
+        this.broadcastRoomCounts();
+    }
+
+    handleRequestRoomCounts(socket) {
+        // Send current room player counts to requesting client
+        const roomCounts = {};
+        this.roomManager.getAllRooms().forEach((room, stake) => {
+            roomCounts[stake] = room.players.size;
+        });
+        
+        socket.emit('roomCounts', roomCounts);
+    }
+
+    broadcastRoomCounts() {
+        // Broadcast room counts to all connected clients
+        const roomCounts = {};
+        this.roomManager.getAllRooms().forEach((room, stake) => {
+            roomCounts[stake] = room.players.size;
+        });
+        
+        // Send to all connected sockets
+        this.io.emit('roomCounts', roomCounts);
     }
 
     handlePlayerInput(socket, data) {
         const player = this.playerManager.getPlayer(socket.id);
-        if (!player || player.isDead || !player.roomStake) return;
+        if (!player || player.isDead || !player.roomStake) {
+            // Reset velocity if player is dead or not in room
+            if (player) {
+                player.vx = 0;
+                player.vy = 0;
+            }
+            return;
+        }
 
         const { keys, mouseX, mouseY, isShooting } = data;
         const room = this.roomManager.getRoom(player.roomStake);
-        if (!room) return;
+        if (!room) {
+            // Reset velocity if room not found
+            player.vx = 0;
+            player.vy = 0;
+            return;
+        }
 
         // Update player position (movement)
         const moveSpeed = GameConfig.TANK.DEFAULT_SPEED + (player.stats.movementSpeed * GameConfig.TANK.MOVEMENT_SPEED_MULTIPLIER);
@@ -200,15 +273,19 @@ class GameServer {
             moveY *= 0.707;
         }
         
+        // Apply movement input (velocity is handled in updateGameState loop)
         player.x += moveX;
         player.y += moveY;
         
         // Clamp to canvas bounds
         const canvasWidth = player.canvasWidth || 1920;
         const canvasHeight = player.canvasHeight || 1080;
+        // Clamp player to world bounds
+        const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+        const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
         const tankSize = 30;
-        player.x = Math.max(tankSize, Math.min(canvasWidth - tankSize, player.x));
-        player.y = Math.max(tankSize, Math.min(canvasHeight - tankSize, player.y));
+        player.x = Math.max(tankSize, Math.min(worldWidth - tankSize, player.x));
+        player.y = Math.max(tankSize, Math.min(worldHeight - tankSize, player.y));
         
         // Update angle (aim direction)
         if (mouseX !== undefined && mouseY !== undefined) {
@@ -327,6 +404,9 @@ class GameServer {
             reason: 'killed_self'
         });
         
+        // Broadcast updated room counts
+        this.broadcastRoomCounts();
+        
         console.log(`Kill self processed: Refund $${refund.toFixed(2)}, Fee $${fee.toFixed(2)}`);
     }
 
@@ -351,6 +431,9 @@ class GameServer {
                 playerId: socket.id,
                 reason: 'disconnected'
             });
+
+            // Broadcast updated room counts
+            this.broadcastRoomCounts();
 
             console.log(`Broadcasted player left to room $${roomStake}`);
         }
@@ -414,12 +497,36 @@ class GameServer {
         const room = this.roomManager.getRoom(roomStake);
         
         if (room) {
+            // Remove player from room's players map
             room.players.delete(socketId);
+            
+            // Remove player's bullets from room (clean up bullets when leaving)
+            const bulletsToRemove = [];
+            room.bullets.forEach((bullet, bulletId) => {
+                if (bullet.ownerId === socketId) {
+                    bulletsToRemove.push(bulletId);
+                }
+            });
+            bulletsToRemove.forEach(bulletId => {
+                room.bullets.delete(bulletId);
+            });
+            
+            // Leave Socket.io room (CRITICAL: prevents receiving updates from old room)
+            if (player.socket) {
+                player.socket.leave(`room_${roomStake}`);
+            }
+            
+            // Clear player's room stake and mark as dead
             player.roomStake = null;
             player.isDead = true; // Mark as dead to prevent further input
+            player.vx = 0; // Reset velocity
+            player.vy = 0; // Reset velocity
             
             // Remove empty room
             this.roomManager.removeEmptyRoom(roomStake);
+            
+            // Broadcast updated room counts
+            this.broadcastRoomCounts();
         }
     }
 
@@ -439,6 +546,39 @@ class GameServer {
         // Update health regeneration for all players
         this.playerManager.updateHealthRegeneration(deltaTime);
 
+        // Update velocity for all players in rooms (squirt effect dampening)
+        this.roomManager.getAllRooms().forEach((room, stake) => {
+            room.players.forEach((player) => {
+                if (player.isDead) {
+                    // Reset velocity if dead
+                    player.vx = 0;
+                    player.vy = 0;
+                    return;
+                }
+                
+                // Apply velocity dampening (like bots)
+                const squirtDampening = 0.95;
+                player.vx = player.vx * squirtDampening;
+                player.vy = player.vy * squirtDampening;
+                
+                // Stop very small velocities to prevent drift
+                const velocityThreshold = 0.1;
+                if (Math.abs(player.vx) < velocityThreshold) player.vx = 0;
+                if (Math.abs(player.vy) < velocityThreshold) player.vy = 0;
+                
+                // Apply velocity to position
+                player.x += player.vx * deltaTime;
+                player.y += player.vy * deltaTime;
+                
+                // Clamp positions to world bounds
+                const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+                const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
+                const tankSize = 30;
+                player.x = Math.max(tankSize, Math.min(worldWidth - tankSize, player.x));
+                player.y = Math.max(tankSize, Math.min(worldHeight - tankSize, player.y));
+            });
+        });
+
         // Update bullets, bots, and check collisions for each room
         this.roomManager.getAllRooms().forEach((room, stake) => {
             // Update bots
@@ -447,7 +587,13 @@ class GameServer {
             // Update bullets
             this.bulletManager.updateBullets(room, deltaTime);
             
-            // Check collisions (order matters: bot-tank first, then bullet collisions)
+            // Check collisions (order matters: tank-tank first, then bot-tank, then bullet collisions)
+            this.collisionManager.checkTankTankCollisions(
+                room,
+                this.playerManager,
+                (killer, victim) => this.handlePlayerDeath(killer, victim)
+            );
+            
             this.collisionManager.checkBotTankCollisions(
                 room,
                 this.playerManager,
@@ -592,6 +738,9 @@ class GameServer {
                 reason: 'died'
             });
         }
+        
+        // Broadcast updated room counts
+        this.broadcastRoomCounts();
         
         console.log(`💀 ${victim.name} was killed by ${killer && killer.id !== victim.id ? killer.name : 'unknown'} - removed from room`);
     }

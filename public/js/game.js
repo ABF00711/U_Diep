@@ -6,13 +6,23 @@ class Game {
         this.ctx = this.canvas.getContext('2d');
         this.input = new Input();
         
-        // Set canvas size
-        this.resizeCanvas();
-        window.addEventListener('resize', () => this.resizeCanvas());
-        
         // Game state
         this.state = 'menu'; // menu, lobby, playing
         this.lastTime = 0;
+        
+        // Camera system (initialize before resizeCanvas)
+        this.camera = {
+            x: 0,                          // Camera position in world coordinates
+            y: 0,                          // Camera position in world coordinates
+            targetX: 0,                    // Target position (for smooth following)
+            targetY: 0,                   // Target position (for smooth following)
+            width: 0,                     // Viewport width (set in resizeCanvas)
+            height: 0                     // Viewport height (set in resizeCanvas)
+        };
+        
+        // Set canvas size (after camera is initialized)
+        this.resizeCanvas();
+        window.addEventListener('resize', () => this.resizeCanvas());
         
         // Economy system
         this.economy = new Economy(GameConfig.ECONOMY.INITIAL_BALANCE);
@@ -42,6 +52,13 @@ class Game {
         this.pelletSprite = null;
         this.loadPelletSprite();
         
+        // Minimap
+        this.minimapCanvas = document.getElementById('minimap');
+        this.minimapCtx = this.minimapCanvas.getContext('2d');
+        this.minimapSize = 200; // Size in pixels
+        this.minimapCanvas.width = this.minimapSize;
+        this.minimapCanvas.height = this.minimapSize;
+        
         // UI elements
         this.setupUI();
         
@@ -53,6 +70,58 @@ class Game {
         // Set canvas to fill window
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
+        
+        // Update camera viewport size
+        this.camera.width = this.canvas.width;
+        this.camera.height = this.canvas.height;
+    }
+
+    /**
+     * Convert world coordinates to screen coordinates (for rendering)
+     */
+    worldToScreen(worldX, worldY) {
+        return {
+            x: worldX - this.camera.x + this.camera.width / 2,
+            y: worldY - this.camera.y + this.camera.height / 2
+        };
+    }
+
+    /**
+     * Convert screen coordinates to world coordinates (for input)
+     */
+    screenToWorld(screenX, screenY) {
+        return {
+            x: screenX + this.camera.x - this.camera.width / 2,
+            y: screenY + this.camera.y - this.camera.height / 2
+        };
+    }
+
+    /**
+     * Update camera to follow player smoothly
+     * Uses exponential smoothing for smooth camera movement (like diep.io)
+     * Camera follows the player's render position (interpolated), not server position
+     */
+    updateCamera(deltaTime) {
+        if (!this.playerTank || this.state !== 'playing') return;
+        
+        // Use player's render position (smoothed) for camera following
+        // This prevents stiffness because camera follows smooth movement, not discrete server updates
+        const targetX = this.playerTank.renderX !== undefined ? this.playerTank.renderX : this.playerTank.x;
+        const targetY = this.playerTank.renderY !== undefined ? this.playerTank.renderY : this.playerTank.y;
+        
+        // Exponential smoothing (like diep.io) - smooth and responsive
+        const smoothFactor = GameConfig.GAME.CAMERA_SMOOTH_FACTOR;
+        this.camera.x += (targetX - this.camera.x) * smoothFactor;
+        this.camera.y += (targetY - this.camera.y) * smoothFactor;
+        
+        // Clamp camera to world boundaries
+        const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+        const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
+        const halfViewportWidth = this.camera.width / 2;
+        const halfViewportHeight = this.camera.height / 2;
+        
+        this.camera.x = Math.max(halfViewportWidth, Math.min(worldWidth - halfViewportWidth, this.camera.x));
+        this.camera.y = Math.max(halfViewportHeight, Math.min(worldHeight - halfViewportHeight, this.camera.y));
     }
 
     setupUI() {
@@ -77,17 +146,42 @@ class Game {
             this.showRoomSelection();
             // Initialize balance display
             this.updateBalanceDisplay();
+            
+            // Request room counts after connection is established
+            if (this.networkManager && this.networkManager.isConnected()) {
+                // Small delay to ensure socket is ready
+                setTimeout(() => {
+                    this.networkManager.requestRoomCounts();
+                }, 100);
+            }
         }, GameConfig.UI.LOADING_SCREEN_DELAY);
     }
 
     showRoomSelection() {
         document.getElementById('roomSelection').classList.remove('hidden');
+        document.getElementById('minimap').classList.add('hidden');
         this.state = 'menu';
+        
+        // Request room counts from server
+        if (this.networkManager && this.networkManager.isConnected()) {
+            this.networkManager.requestRoomCounts();
+        }
+    }
+
+    updateRoomCounts(roomCounts) {
+        // Update player count display on each room button
+        const roomButtons = document.querySelectorAll('.room-btn');
+        roomButtons.forEach(btn => {
+            const stake = parseInt(btn.dataset.stake);
+            const playerCount = roomCounts[stake] || 0;
+            btn.textContent = `$${stake} Room (${playerCount} player${playerCount !== 1 ? 's' : ''})`;
+        });
     }
 
     hideRoomSelection() {
         document.getElementById('roomSelection').classList.add('hidden');
         document.getElementById('killButton').classList.remove('hidden');
+        document.getElementById('minimap').classList.remove('hidden');
         this.state = 'playing';
     }
 
@@ -218,6 +312,58 @@ class Game {
     }
     
     /**
+     * Draw grid pattern on the arena (static grid like diep.io)
+     * Grid is drawn in world coordinates, visible based on camera position
+     */
+    drawGrid() {
+        const gridSize = GameConfig.GAME.GRID_SIZE;
+        const ctx = this.ctx;
+        const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+        const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
+        
+        ctx.strokeStyle = GameConfig.COLORS.GRID_LINE;
+        ctx.lineWidth = 1;
+        
+        // Calculate visible grid range based on camera position
+        const cameraLeft = this.camera.x - this.camera.width / 2;
+        const cameraRight = this.camera.x + this.camera.width / 2;
+        const cameraTop = this.camera.y - this.camera.height / 2;
+        const cameraBottom = this.camera.y + this.camera.height / 2;
+        
+        // Find first grid line before camera view (with some padding for smooth scrolling)
+        const startX = Math.floor((cameraLeft - gridSize) / gridSize) * gridSize;
+        const endX = Math.ceil((cameraRight + gridSize) / gridSize) * gridSize;
+        const startY = Math.floor((cameraTop - gridSize) / gridSize) * gridSize;
+        const endY = Math.ceil((cameraBottom + gridSize) / gridSize) * gridSize;
+        
+        // Draw vertical lines (in world space, convert to screen)
+        for (let worldX = startX; worldX <= endX; worldX += gridSize) {
+            if (worldX < 0 || worldX > worldWidth) continue;
+            
+            const screenStart = this.worldToScreen(worldX, startY);
+            const screenEnd = this.worldToScreen(worldX, endY);
+            
+            ctx.beginPath();
+            ctx.moveTo(screenStart.x, screenStart.y);
+            ctx.lineTo(screenEnd.x, screenEnd.y);
+            ctx.stroke();
+        }
+        
+        // Draw horizontal lines (in world space, convert to screen)
+        for (let worldY = startY; worldY <= endY; worldY += gridSize) {
+            if (worldY < 0 || worldY > worldHeight) continue;
+            
+            const screenStart = this.worldToScreen(startX, worldY);
+            const screenEnd = this.worldToScreen(endX, worldY);
+            
+            ctx.beginPath();
+            ctx.moveTo(screenStart.x, screenStart.y);
+            ctx.lineTo(screenEnd.x, screenEnd.y);
+            ctx.stroke();
+        }
+    }
+
+    /**
      * Helper: Draw rounded rectangle for pellets
      */
     roundedRectPellet(ctx, x, y, width, height, radius) {
@@ -335,13 +481,29 @@ class Game {
 
         // Update player tank
         if (this.playerTank) {
+            // Interpolate player render position (for smooth visual movement)
+            // Server position is authoritative, but we smooth it for rendering
+            if (this.networkManager.isConnected() && this.playerTank.renderX !== undefined) {
+                const interpolationSpeed = GameConfig.GAME.PLAYER_INTERPOLATION_SPEED;
+                this.playerTank.renderX += (this.playerTank.x - this.playerTank.renderX) * interpolationSpeed;
+                this.playerTank.renderY += (this.playerTank.y - this.playerTank.renderY) * interpolationSpeed;
+            } else {
+                // Initialize render position if not set
+                if (this.playerTank.renderX === undefined) {
+                    this.playerTank.renderX = this.playerTank.x;
+                    this.playerTank.renderY = this.playerTank.y;
+                }
+            }
+            
+            // Update camera (follows render position, not server position)
+            this.updateCamera(deltaTime);
             // Send input to server
             if (this.networkManager.isConnected()) {
                 const mousePos = this.input.getMousePosition();
-                // Convert canvas coordinates to world coordinates (relative to player position)
-                // For now, assuming no camera/viewport - mouse position is world position
-                const worldMouseX = mousePos.x;
-                const worldMouseY = mousePos.y;
+                // Convert screen coordinates to world coordinates
+                const worldMouse = this.screenToWorld(mousePos.x, mousePos.y);
+                const worldMouseX = worldMouse.x;
+                const worldMouseY = worldMouse.y;
                 
                 // Send shooting state (always send mouse down state, server handles reload)
                 const isShooting = this.input.isMouseDown();
@@ -363,9 +525,13 @@ class Game {
                 );
                 
                 // Don't update locally when connected - server is authoritative
-                // Only update angle for visual feedback
-                const mouse = this.input.getMousePosition();
-                this.playerTank.angle = Math.atan2(mouse.y - this.playerTank.y, mouse.x - this.playerTank.x);
+                // Only update angle for visual feedback (reuse worldMouse already calculated above)
+                // Use render position for angle calculation to match visual position
+                const renderX = this.playerTank.renderX !== undefined ? this.playerTank.renderX : this.playerTank.x;
+                const renderY = this.playerTank.renderY !== undefined ? this.playerTank.renderY : this.playerTank.y;
+                const dx = worldMouse.x - renderX;
+                const dy = worldMouse.y - renderY;
+                this.playerTank.angle = Math.atan2(dy, dx);
             } else {
                 // Update locally when not connected (offline mode)
                 this.playerTank.update(deltaTime, this.input, this.canvas.width, this.canvas.height);
@@ -382,7 +548,10 @@ class Game {
             
             // Only update if we're connected and in playing state
             if (this.networkManager.isConnected() && this.state === 'playing') {
-                tank.update(deltaTime, null, this.canvas.width, this.canvas.height);
+                // Enemy tanks don't need bounds check (server handles), but pass world size for consistency
+                const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+                const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
+                tank.update(deltaTime, null, worldWidth, worldHeight);
             }
             return true; // Keep alive tanks
         });
@@ -399,20 +568,25 @@ class Game {
                 return true;
             });
         } else {
-            // Offline mode - update bots locally
+            // Offline mode - update bots locally (use world bounds)
+            const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+            const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
             this.bots = this.bots.filter(bot => {
                 if (!bot) return false;
-                bot.update(deltaTime, this.canvas.width, this.canvas.height);
+                bot.update(deltaTime, worldWidth, worldHeight);
                 return true;
             });
         }
 
         // Update bullets
+        const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+        const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
         this.bullets = this.bullets.filter(bullet => {
             bullet.update(deltaTime);
             
-            // Remove if out of bounds or expired (lifetime acts as range)
-            if (bullet.isOutOfBounds(this.canvas.width, this.canvas.height) || 
+            // Remove if out of world bounds or expired (lifetime acts as range)
+            if (bullet.x < -bullet.size || bullet.x > worldWidth + bullet.size ||
+                bullet.y < -bullet.size || bullet.y > worldHeight + bullet.size ||
                 bullet.isExpired()) {
                 return false;
             }
@@ -470,7 +644,14 @@ class Game {
         this.ctx.fillStyle = GameConfig.COLORS.ARENA_BACKGROUND;
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
+        // Draw grid pattern (static, like diep.io)
+        this.drawGrid();
+
         if (this.state === 'playing') {
+            // Apply camera transform for all world-space rendering
+            this.ctx.save();
+            this.ctx.translate(-this.camera.x + this.camera.width / 2, -this.camera.y + this.camera.height / 2);
+            
             // Draw bots
             this.bots.forEach(bot => {
                 if (bot && !bot.isDead) {
@@ -515,9 +696,12 @@ class Game {
             });
 
             // Draw player tank
-            if (this.playerTank) {
+            if (this.playerTank && !this.playerTank.isDead) {
                 this.playerTank.draw(this.ctx);
             }
+            
+            // Restore camera transform
+            this.ctx.restore();
 
             // Update HUD
             if (this.playerTank) {
@@ -556,7 +740,117 @@ class Game {
             
             // Update balance display
             this.updateBalanceDisplay();
+            
+            // Draw minimap
+            this.drawMinimap();
         }
+    }
+
+    /**
+     * Draw minimap showing player position (highlighted) and other players
+     */
+    drawMinimap() {
+        if (!this.playerTank || this.state !== 'playing') return;
+        
+        const ctx = this.minimapCtx;
+        const size = this.minimapSize;
+        const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+        const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
+        
+        // Clear minimap
+        ctx.fillStyle = 'rgba(22, 33, 62, 0.9)';
+        ctx.fillRect(0, 0, size, size);
+        
+        // Draw world bounds
+        ctx.strokeStyle = '#4a90e2';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(0, 0, size, size);
+        
+        // Calculate scale to fit world in minimap
+        const scaleX = size / worldWidth;
+        const scaleY = size / worldHeight;
+        const scale = Math.min(scaleX, scaleY);
+        
+        // Draw grid lines (optional, for reference)
+        ctx.strokeStyle = 'rgba(74, 144, 226, 0.3)';
+        ctx.lineWidth = 1;
+        const gridSize = GameConfig.GAME.GRID_SIZE;
+        for (let x = 0; x <= worldWidth; x += gridSize * 10) { // Every 10 grid cells
+            const screenX = x * scale;
+            ctx.beginPath();
+            ctx.moveTo(screenX, 0);
+            ctx.lineTo(screenX, size);
+            ctx.stroke();
+        }
+        for (let y = 0; y <= worldHeight; y += gridSize * 10) {
+            const screenY = y * scale;
+            ctx.beginPath();
+            ctx.moveTo(0, screenY);
+            ctx.lineTo(size, screenY);
+            ctx.stroke();
+        }
+        
+        // Draw enemy players (from both enemyTanks array and serverPlayers map)
+        ctx.fillStyle = GameConfig.COLORS.ENEMY_TANK;
+        
+        // Draw from enemyTanks array
+        this.enemyTanks.forEach(tank => {
+            if (tank && !tank.isDead) {
+                const renderX = tank.renderX !== undefined ? tank.renderX : tank.x;
+                const renderY = tank.renderY !== undefined ? tank.renderY : tank.y;
+                const minimapX = renderX * scale;
+                const minimapY = renderY * scale;
+                
+                ctx.beginPath();
+                ctx.arc(minimapX, minimapY, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
+        
+        // Also draw from serverPlayers map (if connected)
+        if (this.networkManager && this.networkManager.serverPlayers) {
+            this.networkManager.serverPlayers.forEach((tank, playerId) => {
+                if (tank && !tank.isDead && playerId !== this.networkManager.playerId) {
+                    const renderX = tank.renderX !== undefined ? tank.renderX : tank.x;
+                    const renderY = tank.renderY !== undefined ? tank.renderY : tank.y;
+                    const minimapX = renderX * scale;
+                    const minimapY = renderY * scale;
+                    
+                    ctx.beginPath();
+                    ctx.arc(minimapX, minimapY, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+        }
+        
+        // Draw player (highlighted)
+        const playerRenderX = this.playerTank.renderX !== undefined ? this.playerTank.renderX : this.playerTank.x;
+        const playerRenderY = this.playerTank.renderY !== undefined ? this.playerTank.renderY : this.playerTank.y;
+        const playerMinimapX = playerRenderX * scale;
+        const playerMinimapY = playerRenderY * scale;
+        
+        // Draw player highlight circle
+        ctx.fillStyle = 'rgba(74, 144, 226, 0.3)';
+        ctx.beginPath();
+        ctx.arc(playerMinimapX, playerMinimapY, 5, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw player point
+        ctx.fillStyle = GameConfig.COLORS.PLAYER_TANK;
+        ctx.beginPath();
+        ctx.arc(playerMinimapX, playerMinimapY, 3, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw player direction indicator
+        ctx.strokeStyle = GameConfig.COLORS.PLAYER_TANK;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(playerMinimapX, playerMinimapY);
+        ctx.lineTo(
+            playerMinimapX + Math.cos(this.playerTank.angle) * 6,
+            playerMinimapY + Math.sin(this.playerTank.angle) * 6
+        );
+        ctx.stroke();
     }
 
     gameLoop(currentTime) {

@@ -71,7 +71,7 @@ body {
 
 .room-btn {
     display: block;
-    width: 200px;
+    width: 300px;
     padding: 15px;
     margin: 10px auto;
     background: #4a90e2;
@@ -94,28 +94,40 @@ body {
 }
 
 #killButton {
-    position: absolute;
-    bottom: 30px;
-    right: 30px;
-    padding: 15px 30px;
+    margin-top: 15px;
+    padding: 10px 20px;
     background: #e24a4a;
     color: #fff;
     border: none;
-    border-radius: 8px;
-    font-size: 16px;
+    border-radius: 6px;
+    font-size: 14px;
     font-weight: bold;
     cursor: pointer;
     pointer-events: auto;
     transition: all 0.3s;
+    width: 100%;
 }
 
 #killButton:hover {
     background: #c0392b;
-    transform: scale(1.05);
+    transform: scale(1.02);
 }
 
 #killButton:active {
-    transform: scale(0.95);
+    transform: scale(0.98);
+}
+
+#minimap {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    width: 200px;
+    height: 200px;
+    background: rgba(0, 0, 0, 0.8);
+    border: 2px solid #4a90e2;
+    border-radius: 8px;
+    pointer-events: none;
+    z-index: 20;
 }
 
 #loadingScreen {
@@ -149,14 +161,8 @@ body {
 /* Stat Allocation UI */
 #statAllocationUI {
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.8);
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    bottom: 20px;
+    left: 20px;
     z-index: 100;
     pointer-events: auto;
 }
@@ -165,44 +171,47 @@ body {
     background: rgba(26, 26, 46, 0.95);
     border: 2px solid #4a90e2;
     border-radius: 12px;
-    padding: 30px;
-    min-width: 400px;
-    max-width: 500px;
+    padding: 20px;
+    min-width: 300px;
+    max-width: 350px;
     color: #fff;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
 }
 
 .stat-allocation-panel h2 {
     color: #4a90e2;
-    margin-bottom: 20px;
+    margin-bottom: 15px;
     text-align: center;
-    font-size: 24px;
+    font-size: 20px;
 }
 
 .stat-points-display {
     text-align: center;
-    margin-bottom: 20px;
-    font-size: 18px;
+    margin-bottom: 15px;
+    font-size: 16px;
     font-weight: bold;
     color: #4ecdc4;
 }
 
 .stat-points-display span {
     color: #ffd700;
-    font-size: 24px;
+    font-size: 20px;
 }
 
 .stats-grid {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    margin-bottom: 20px;
+    gap: 8px;
+    margin-bottom: 15px;
+    max-height: 400px;
+    overflow-y: auto;
 }
 
 .stat-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px;
+    padding: 8px;
     background: rgba(255, 255, 255, 0.05);
     border-radius: 6px;
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -210,7 +219,7 @@ body {
 
 .stat-name {
     flex: 1;
-    font-size: 14px;
+    font-size: 13px;
 }
 
 .stat-value {
@@ -222,13 +231,13 @@ body {
 }
 
 .stat-btn {
-    width: 35px;
-    height: 35px;
+    width: 20px;
+    height: 20px;
     background: #4a90e2;
     color: #fff;
     border: none;
     border-radius: 6px;
-    font-size: 20px;
+    font-size: 16px;
     font-weight: bold;
     cursor: pointer;
     transition: all 0.2s;
@@ -254,15 +263,16 @@ body {
 }
 
 .close-btn {
-    padding: 12px 30px;
+    padding: 10px 20px;
     background: #4a90e2;
     color: #fff;
     border: none;
     border-radius: 8px;
-    font-size: 16px;
+    font-size: 14px;
     font-weight: bold;
     cursor: pointer;
     transition: all 0.3s;
+    width: 100%;
 }
 
 .close-btn:hover {
