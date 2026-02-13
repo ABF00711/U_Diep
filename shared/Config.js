@@ -22,6 +22,7 @@ const GameConfig = {
         DEFAULT_SPEED: 200,
         DEFAULT_HEALTH: 100,
         DEFAULT_MAX_HEALTH: 100,
+        HEALTH_MULTIPLIER: 0.2,            // Stat multiplier
         DEFAULT_BODY_DAMAGE: 3,            // Base body damage (added to stat value)
         BASE_RELOAD_TIME: 1000,            // milliseconds
         BODY_DAMAGE_COOLDOWN: 1000,        // milliseconds
