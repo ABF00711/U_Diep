@@ -94,28 +94,40 @@ body {
 }
 
 #killButton {
-    position: absolute;
-    bottom: 30px;
-    right: 30px;
-    padding: 15px 30px;
+    margin-top: 15px;
+    padding: 10px 20px;
     background: #e24a4a;
     color: #fff;
     border: none;
-    border-radius: 8px;
-    font-size: 16px;
+    border-radius: 6px;
+    font-size: 14px;
     font-weight: bold;
     cursor: pointer;
     pointer-events: auto;
     transition: all 0.3s;
+    width: 100%;
 }
 
 #killButton:hover {
     background: #c0392b;
-    transform: scale(1.05);
+    transform: scale(1.02);
 }
 
 #killButton:active {
-    transform: scale(0.95);
+    transform: scale(0.98);
+}
+
+#minimap {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    width: 200px;
+    height: 200px;
+    background: rgba(0, 0, 0, 0.8);
+    border: 2px solid #4a90e2;
+    border-radius: 8px;
+    pointer-events: none;
+    z-index: 20;
 }
 
 #loadingScreen {

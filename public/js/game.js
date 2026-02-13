@@ -52,6 +52,13 @@ class Game {
         this.pelletSprite = null;
         this.loadPelletSprite();
         
+        // Minimap
+        this.minimapCanvas = document.getElementById('minimap');
+        this.minimapCtx = this.minimapCanvas.getContext('2d');
+        this.minimapSize = 200; // Size in pixels
+        this.minimapCanvas.width = this.minimapSize;
+        this.minimapCanvas.height = this.minimapSize;
+        
         // UI elements
         this.setupUI();
         
@@ -152,6 +159,7 @@ class Game {
 
     showRoomSelection() {
         document.getElementById('roomSelection').classList.remove('hidden');
+        document.getElementById('minimap').classList.add('hidden');
         this.state = 'menu';
         
         // Request room counts from server
@@ -173,6 +181,7 @@ class Game {
     hideRoomSelection() {
         document.getElementById('roomSelection').classList.add('hidden');
         document.getElementById('killButton').classList.remove('hidden');
+        document.getElementById('minimap').classList.remove('hidden');
         this.state = 'playing';
     }
 
@@ -731,7 +740,117 @@ class Game {
             
             // Update balance display
             this.updateBalanceDisplay();
+            
+            // Draw minimap
+            this.drawMinimap();
         }
+    }
+
+    /**
+     * Draw minimap showing player position (highlighted) and other players
+     */
+    drawMinimap() {
+        if (!this.playerTank || this.state !== 'playing') return;
+        
+        const ctx = this.minimapCtx;
+        const size = this.minimapSize;
+        const worldWidth = GameConfig.GAME.WORLD_WIDTH;
+        const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
+        
+        // Clear minimap
+        ctx.fillStyle = 'rgba(22, 33, 62, 0.9)';
+        ctx.fillRect(0, 0, size, size);
+        
+        // Draw world bounds
+        ctx.strokeStyle = '#4a90e2';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(0, 0, size, size);
+        
+        // Calculate scale to fit world in minimap
+        const scaleX = size / worldWidth;
+        const scaleY = size / worldHeight;
+        const scale = Math.min(scaleX, scaleY);
+        
+        // Draw grid lines (optional, for reference)
+        ctx.strokeStyle = 'rgba(74, 144, 226, 0.3)';
+        ctx.lineWidth = 1;
+        const gridSize = GameConfig.GAME.GRID_SIZE;
+        for (let x = 0; x <= worldWidth; x += gridSize * 10) { // Every 10 grid cells
+            const screenX = x * scale;
+            ctx.beginPath();
+            ctx.moveTo(screenX, 0);
+            ctx.lineTo(screenX, size);
+            ctx.stroke();
+        }
+        for (let y = 0; y <= worldHeight; y += gridSize * 10) {
+            const screenY = y * scale;
+            ctx.beginPath();
+            ctx.moveTo(0, screenY);
+            ctx.lineTo(size, screenY);
+            ctx.stroke();
+        }
+        
+        // Draw enemy players (from both enemyTanks array and serverPlayers map)
+        ctx.fillStyle = GameConfig.COLORS.ENEMY_TANK;
+        
+        // Draw from enemyTanks array
+        this.enemyTanks.forEach(tank => {
+            if (tank && !tank.isDead) {
+                const renderX = tank.renderX !== undefined ? tank.renderX : tank.x;
+                const renderY = tank.renderY !== undefined ? tank.renderY : tank.y;
+                const minimapX = renderX * scale;
+                const minimapY = renderY * scale;
+                
+                ctx.beginPath();
+                ctx.arc(minimapX, minimapY, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
+        
+        // Also draw from serverPlayers map (if connected)
+        if (this.networkManager && this.networkManager.serverPlayers) {
+            this.networkManager.serverPlayers.forEach((tank, playerId) => {
+                if (tank && !tank.isDead && playerId !== this.networkManager.playerId) {
+                    const renderX = tank.renderX !== undefined ? tank.renderX : tank.x;
+                    const renderY = tank.renderY !== undefined ? tank.renderY : tank.y;
+                    const minimapX = renderX * scale;
+                    const minimapY = renderY * scale;
+                    
+                    ctx.beginPath();
+                    ctx.arc(minimapX, minimapY, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+        }
+        
+        // Draw player (highlighted)
+        const playerRenderX = this.playerTank.renderX !== undefined ? this.playerTank.renderX : this.playerTank.x;
+        const playerRenderY = this.playerTank.renderY !== undefined ? this.playerTank.renderY : this.playerTank.y;
+        const playerMinimapX = playerRenderX * scale;
+        const playerMinimapY = playerRenderY * scale;
+        
+        // Draw player highlight circle
+        ctx.fillStyle = 'rgba(74, 144, 226, 0.3)';
+        ctx.beginPath();
+        ctx.arc(playerMinimapX, playerMinimapY, 5, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw player point
+        ctx.fillStyle = GameConfig.COLORS.PLAYER_TANK;
+        ctx.beginPath();
+        ctx.arc(playerMinimapX, playerMinimapY, 3, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Draw player direction indicator
+        ctx.strokeStyle = GameConfig.COLORS.PLAYER_TANK;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(playerMinimapX, playerMinimapY);
+        ctx.lineTo(
+            playerMinimapX + Math.cos(this.playerTank.angle) * 6,
+            playerMinimapY + Math.sin(this.playerTank.angle) * 6
+        );
+        ctx.stroke();
     }
 
     gameLoop(currentTime) {
