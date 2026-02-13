@@ -30,7 +30,6 @@ class Game {
         // Managers
         this.rewardManager = new RewardManager(this.economy);
         this.deathHandler = new DeathHandler(this);
-        this.collisionManager = new CollisionManager(this);
         this.statAllocationUI = new StatAllocationUI(this);
         this.networkManager = new NetworkManager(this);
         
@@ -39,7 +38,6 @@ class Game {
         this.enemyTanks = [];
         this.bullets = [];
         this.bots = [];
-        this.pellets = []; // Keep for now, will be replaced by bots
         
         // Bot sprites
         this.botSprites = {
@@ -47,10 +45,6 @@ class Game {
             triangle: null
         };
         this.loadBotSprites();
-        
-        // Pellet sprite
-        this.pelletSprite = null;
-        this.loadPelletSprite();
         
         // Minimap
         this.minimapCanvas = document.getElementById('minimap');
@@ -253,15 +247,6 @@ class Game {
                 stake: currentStake // Store player's stake
             }
         );
-
-        // Enemy tanks will be created by NetworkManager when other players join
-        // No need to create test enemy tanks in multiplayer mode
-
-        // Bots are now server-managed - don't generate locally when connected
-        if (!this.networkManager.isConnected()) {
-            // Only generate bots in offline mode
-            this.generateBots(GameConfig.GAME.DEFAULT_BOT_COUNT);
-        }
     }
 
     loadBotSprites() {
@@ -298,11 +283,6 @@ class Game {
         triSprite.onerror = () => {
             console.error('Failed to load triangle bot sprite from:', triSprite.src);
         };
-    }
-    
-    loadPelletSprite() {
-        // No longer needed - pellets are drawn programmatically
-        // Keeping method for compatibility but it does nothing now
     }
     
     /**
@@ -357,66 +337,14 @@ class Game {
         }
     }
 
-    /**
-     * Helper: Draw rounded rectangle for pellets
-     */
-    roundedRectPellet(ctx, x, y, width, height, radius) {
-        ctx.moveTo(x + radius, y);
-        ctx.lineTo(x + width - radius, y);
-        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-        ctx.lineTo(x + width, y + height - radius);
-        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-        ctx.lineTo(x + radius, y + height);
-        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-        ctx.lineTo(x, y + radius);
-        ctx.quadraticCurveTo(x, y, x + radius, y);
-    }
-
-    generateBots(count) {
-        this.bots = [];
-        
-        // Ensure canvas has valid dimensions
-        const canvasWidth = Math.max(this.canvas.width || GameConfig.GAME.CANVAS_MIN_WIDTH, GameConfig.GAME.CANVAS_MIN_WIDTH);
-        const canvasHeight = Math.max(this.canvas.height || GameConfig.GAME.CANVAS_MIN_HEIGHT, GameConfig.GAME.CANVAS_MIN_HEIGHT);
-        
-        for (let i = 0; i < count; i++) {
-            // Mix of rectangles and triangles (more rectangles than triangles)
-            const type = Math.random() < GameConfig.BOT.RECTANGLE_SPAWN_CHANCE ? 'rectangle' : 'triangle';
-            const bot = new Bot(
-                random(GameConfig.GAME.SPAWN_MARGIN, canvasWidth - GameConfig.GAME.SPAWN_MARGIN),
-                random(GameConfig.GAME.SPAWN_MARGIN, canvasHeight - GameConfig.GAME.SPAWN_MARGIN),
-                type
-            );
-            
-            // Load sprite if available
-            if (this.botSprites[type]) {
-                bot.loadSprite(this.botSprites[type]);
-            }
-            
-            this.bots.push(bot);
-        }
-    }
-
     killSelf() {
         if (this.state === 'playing' && this.playerTank) {
             console.log('🔴 Kill self requested...');
             
             // Send to server and wait for confirmation
-            if (this.networkManager.isConnected()) {
-                // Server will handle cleanup and send 'killedSelf' event
-                this.networkManager.sendKillSelf();
-                // Don't clean up here - wait for server confirmation via handleKilledSelf
-            } else {
-                // Fallback for offline mode
-                console.warn('Not connected to server, using offline mode');
-                if (this.economy.isInMatch()) {
-                    this.deathHandler.handleKillButtonExit();
-                }
-                this.playerTank = null;
-                this.state = 'menu';
-                document.getElementById('killButton').classList.add('hidden');
-                this.showRoomSelection();
-            }
+            // Server will handle cleanup and send 'killedSelf' event
+            this.networkManager.sendKillSelf();
+            // Don't clean up here - wait for server confirmation via handleKilledSelf
         } else {
             console.warn('Cannot kill self: not in playing state or no player tank');
         }
@@ -538,10 +466,8 @@ class Game {
                 const dx = worldMouse.x - renderX;
                 const dy = worldMouse.y - renderY;
                 this.playerTank.angle = Math.atan2(dy, dx);
-            } else {
-                // Update locally when not connected (offline mode)
-                this.playerTank.update(deltaTime, this.input, this.canvas.width, this.canvas.height);
             }
+            // Server handles player movement and updates - client only updates angle for visual feedback
             
             // Shooting - when connected, server handles bullet creation
             // Don't create bullets locally when connected (server is authoritative)
@@ -562,27 +488,16 @@ class Game {
             return true; // Keep alive tanks
         });
 
-        // Update bots (server-managed when connected)
-        if (this.networkManager.isConnected()) {
-            // Server manages bots - just filter dead ones
-            this.bots = this.bots.filter(bot => {
-                if (!bot || bot.isDead) return false;
-                // Update rotation for visual effect (server handles position)
-                if (bot.rotationSpeed !== undefined) {
-                    bot.rotation += bot.rotationSpeed * deltaTime * 60;
-                }
-                return true;
-            });
-        } else {
-            // Offline mode - update bots locally (use world bounds)
-            const worldWidth = GameConfig.GAME.WORLD_WIDTH;
-            const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
-            this.bots = this.bots.filter(bot => {
-                if (!bot) return false;
-                bot.update(deltaTime, worldWidth, worldHeight);
-                return true;
-            });
-        }
+        // Update bots (server-managed)
+        // Server manages bot positions - client only updates rotation for visual effect
+        this.bots = this.bots.filter(bot => {
+            if (!bot || bot.isDead) return false;
+            // Update rotation for visual effect (server handles position)
+            if (bot.rotationSpeed !== undefined) {
+                bot.rotation += bot.rotationSpeed * deltaTime * 60;
+            }
+            return true;
+        });
 
         // Update bullets
         const worldWidth = GameConfig.GAME.WORLD_WIDTH;
@@ -597,48 +512,16 @@ class Game {
                 return false;
             }
             
-            // Remove if penetration reached 0 (server handles collisions when connected, but client should respect penetration)
+            // Remove if penetration reached 0 (server handles collisions, but client should respect penetration)
             if (bullet.penetration !== undefined && bullet.penetration <= 0) {
                 return false;
             }
             
-            // Check collisions with tanks (only in offline mode - server handles when connected)
-            if (!this.networkManager.isConnected()) {
-                const allTanks = [this.playerTank, ...this.enemyTanks].filter(t => t && !t.isDead);
-                const shouldRemove = this.collisionManager.checkBulletTankCollision(bullet, allTanks);
-                if (shouldRemove) {
-                    return false; // Remove bullet
-                }
-                
-                // Check collisions with bots (only in offline mode - server handles when connected)
-                const shouldRemoveBot = this.collisionManager.checkBulletBotCollision(bullet, this.bots);
-                if (shouldRemoveBot) {
-                    return false; // Remove bullet
-                }
-            }
-            // Server handles collisions when connected - bullets are synced via gameState
+            // Server handles all collisions - bullets are synced via gameState
             
             return true;
         });
 
-        // Check tank collision with bots (only in offline mode - server handles when connected)
-        if (this.playerTank && !this.networkManager.isConnected()) {
-            this.collisionManager.checkTankBotCollision(this.playerTank, this.bots);
-        }
-        // Server handles tank-bot collisions when connected
-
-        // Check pellet collisions (keep for now, can remove later)
-        if (this.playerTank) {
-            this.pellets = this.pellets.filter(pellet => {
-                const distance = getDistance(pellet.x, pellet.y, this.playerTank.x, this.playerTank.y);
-                if (distance < this.playerTank.size + pellet.size) {
-                    // Collect pellet
-                    this.playerTank.addXP(pellet.xp);
-                    return false; // Remove pellet
-                }
-                return true;
-            });
-        }
     }
 
     render() {
@@ -659,30 +542,6 @@ class Game {
                 if (bot && !bot.isDead) {
                     bot.draw(this.ctx);
                 }
-            });
-
-            // Draw pellets (keep for now, can remove later)
-            // Pellets are now drawn programmatically by bots, so this can be removed if pellets array is empty
-            this.pellets.forEach(pellet => {
-                // Draw square pellet programmatically (same style as rectangle bots)
-                this.ctx.save();
-                this.ctx.translate(pellet.x, pellet.y);
-                
-                const size = pellet.size || 5;
-                const cornerRadius = size * 0.15;
-                
-                // Draw filled square with rounded corners
-                this.ctx.fillStyle = GameConfig.COLORS.BOT_RECTANGLE;
-                this.ctx.beginPath();
-                this.roundedRectPellet(this.ctx, -size, -size, size * 2, size * 2, cornerRadius);
-                this.ctx.fill();
-                
-                // Draw border
-                this.ctx.strokeStyle = GameConfig.COLORS.BOT_RECTANGLE_BORDER;
-                this.ctx.lineWidth = 2;
-                this.ctx.stroke();
-                
-                this.ctx.restore();
             });
 
             // Draw bullets
