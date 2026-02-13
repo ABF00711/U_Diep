@@ -194,7 +194,7 @@ class Game {
         
         console.log(`Joining $${stake} room...`);
         
-        // Check if player can afford the wager
+        // Check if player can afford the wager (but don't deduct yet - server will deduct)
         if (!this.economy.canAfford(stake)) {
             alert(`Insufficient balance! You need $${stake} but only have $${this.economy.getBalance()}`);
             return;
@@ -212,32 +212,26 @@ class Game {
             this.economy.currentWager = 0;
         }
         
-        // Deduct wager
-        const wagerSuccess = this.economy.wager(stake);
-        if (!wagerSuccess) {
-            alert(`Failed to wager $${stake}. Insufficient balance.`);
-            return;
-        }
+        // Store original balance to send to server (before deduction)
+        // Server will deduct stake authoritatively and send back final balance
+        const originalBalance = this.economy.getBalance();
         
-        console.log(`Wagered $${stake}. New balance: $${this.economy.getBalance()}`);
-        
-        // Update balance display
-        this.updateBalanceDisplay();
+        console.log(`Joining room with stake $${stake}. Current balance: $${originalBalance}`);
         
         // Connect to server and join room
+        // Send original balance - server will deduct stake and send back final balance
         const joined = this.networkManager.joinRoom(
             stake,
             'Player',
-            this.economy.getBalance()
+            originalBalance
         );
         
         if (joined) {
             // Wait for server confirmation before starting game
             // Game will start when 'joinedRoom' event is received
+            // Balance will be synced from server in handleJoinedRoom
         } else {
-            // Failed to connect - refund wager
-            this.economy.refundWager(stake);
-            this.updateBalanceDisplay();
+            // Failed to connect - no need to refund since we never deducted
             alert('Failed to connect to server. Please try again.');
         }
     }
@@ -632,10 +626,6 @@ class Game {
             this.collisionManager.checkTankBotCollision(this.playerTank, this.bots);
         }
         // Server handles tank-bot collisions when connected
-
-        // Check tank vs tank collisions (mutual body damage) - only alive tanks
-        const allTanks = [this.playerTank, ...this.enemyTanks].filter(t => t && !t.isDead);
-        this.collisionManager.checkTankTankCollision(allTanks);
 
         // Check pellet collisions (keep for now, can remove later)
         if (this.playerTank) {

@@ -133,7 +133,9 @@ class CollisionManager {
                     }
                     
                     if (isDead && tank.isPlayer) {
-                        this.deathHandler.handlePlayerDeath('bot');
+                        // Don't handle player death client-side - server is authoritative
+                        // Server will detect death and send playerDied event
+                        // If disconnected, disconnect handler will clean up automatically
                         return; // Exit early since player is dead
                     }
                 }
@@ -248,9 +250,9 @@ class CollisionManager {
             const isDead = tank2.takeDamage(tank1.getBodyDamage());
             tank1.recordBodyDamageToTarget(tank2.id, currentTime);
             
-            if (isDead && tank2.isPlayer) {
-                this.deathHandler.handlePlayerDeath('tank_collision');
-            }
+            // Don't handle player death client-side when connected - server is authoritative
+            // Server will detect death and send playerDied event
+            // If disconnected, disconnect handler will clean up automatically
             
             // Check if player (tank1) killed tank2 - give reward
             if (isDead && tank1.isPlayer && !tank2.isPlayer) {
@@ -289,9 +291,9 @@ class CollisionManager {
             const isDead = tank1.takeDamage(tank2.getBodyDamage());
             tank2.recordBodyDamageToTarget(tank1.id, currentTime);
             
-            if (isDead && tank1.isPlayer) {
-                this.deathHandler.handlePlayerDeath('tank_collision');
-            }
+            // Don't handle player death client-side when connected - server is authoritative
+            // Server will detect death and send playerDied event
+            // If disconnected, disconnect handler will clean up automatically
         }
     }
     
