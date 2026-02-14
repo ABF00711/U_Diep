@@ -45,8 +45,12 @@ class NetworkManager {
             if (this.game.state === 'playing' && this.playerId) {
                 console.log('Handling disconnect during gameplay...');
                 
-                // Refund wager if in match (client-side fallback)
-                if (this.game.economy.isInMatch()) {
+                // Only refund if player didn't die (death is handled by handlePlayerDied)
+                // Check if player tank is dead - if so, don't refund (death already handled)
+                const playerDied = this.game.playerTank && this.game.playerTank.isDead;
+                
+                // Refund wager if in match AND player didn't die (client-side fallback for real disconnects)
+                if (this.game.economy.isInMatch() && !playerDied) {
                     const wager = this.game.economy.getCurrentWager();
                     this.game.economy.refundWager(wager);
                     this.game.updateBalanceDisplay();
@@ -54,6 +58,9 @@ class NetworkManager {
                         `Disconnected. Refunded: $${wager.toFixed(2)}`,
                         GameConfig.UI.MESSAGE_DURATION_LONG
                     );
+                } else if (playerDied) {
+                    // Player died - don't refund, death was already handled by handlePlayerDied
+                    console.log('Player died - skipping disconnect refund (death already handled)');
                 }
 
                 // Clean up and exit
@@ -248,6 +255,15 @@ class NetworkManager {
         this.playerId = data.playerId;
         this.roomStake = data.stake;
 
+        // Sync balance from server (server-authoritative, stake was deducted server-side)
+        if (data.balance !== undefined) {
+            this.game.economy.setBalance(data.balance);
+            // Server already deducted stake, so clear client-side wager tracking
+            // (client may have deducted optimistically, but server balance is authoritative)
+            this.game.economy.currentWager = data.stake; // Track wager amount for UI
+            this.game.updateBalanceDisplay();
+        }
+
         // Start game if not already started
         if (this.game.state !== 'playing') {
             this.game.startGame();
@@ -384,12 +400,19 @@ class NetworkManager {
                 // Update enemy player
                 const tank = this.serverPlayers.get(playerData.playerId);
                 if (tank) {
-                    // Interpolate for smooth movement of other players
-                    const lerp = 0.5; // Higher lerp for smoother enemy movement
-                    tank.x += (playerData.x - tank.x) * lerp;
-                    tank.y += (playerData.y - tank.y) * lerp;
+                    // Store server-authoritative position (for interpolation in game loop)
+                    // Don't lerp here - let game.js handle smooth interpolation via renderX/renderY
+                    tank.x = playerData.x;
+                    tank.y = playerData.y;
                     tank.angle = playerData.angle;
                     tank.level = playerData.level || tank.level;
+                    
+                    // Initialize render position if not set (for smooth visual interpolation)
+                    if (tank.renderX === undefined) {
+                        tank.renderX = playerData.x;
+                        tank.renderY = playerData.y;
+                    }
+                    
                     // Health is server-authoritative - always use server value
                     const oldEnemyHealth = tank.health;
                     tank.health = playerData.health;
@@ -529,6 +552,10 @@ class NetworkManager {
         tank.health = playerData.health || 100;
         tank.maxHealth = playerData.maxHealth || 100;
         tank.angle = playerData.angle || 0;
+        
+        // Initialize render position for smooth interpolation (same as local player)
+        tank.renderX = playerData.x;
+        tank.renderY = playerData.y;
 
         this.serverPlayers.set(playerId, tank);
         this.game.enemyTanks.push(tank);
@@ -583,9 +610,9 @@ class NetworkManager {
         // We killed another player - stay in game and continue playing!
         console.log('✅ Player killed:', data);
         
-        // Update balance
-        if (data.reward) {
-            this.game.economy.addKillReward(data.reward);
+        // Sync balance from server (server-authoritative, reward was already added server-side)
+        if (data.newBalance !== undefined) {
+            this.game.economy.setBalance(data.newBalance);
             this.game.updateBalanceDisplay();
         }
         
@@ -734,12 +761,21 @@ class NetworkManager {
         console.log('💀 We died:', data);
         
         if (this.game.playerTank) {
+            // Mark player as dead FIRST (before disconnect handler might run)
+            // This prevents disconnect handler from giving a refund
             this.game.playerTank.isDead = true;
             this.game.playerTank.health = 0;
             
-            // Update balance (lost stake - stake is already lost, just clear wager tracking)
+            // Clear wager immediately to prevent disconnect handler from refunding
+            this.game.economy.currentWager = 0;
+            
+            // Sync balance from server (stake was already deducted server-side when joining)
+            // Victim loses full stake - NO REFUND when killed by another player
+            if (data.newBalance !== undefined) {
+                this.game.economy.setBalance(data.newBalance);
+            }
+            
             const lostStake = data.lostStake || this.game.economy.getCurrentWager();
-            this.game.economy.currentWager = 0; // Clear wager (stake was already lost on server)
             
             // Show message
             this.game.showMessage(

@@ -116,6 +116,9 @@ class GameServer {
                 });
             }
             
+            // Sync balance from client (client sends original balance before deduction)
+            player.balance = balance;
+            
             player.isDead = false;
             player.health = GameConfig.TANK.DEFAULT_HEALTH;
             player.maxHealth = GameConfig.TANK.DEFAULT_MAX_HEALTH;
@@ -130,10 +133,10 @@ class GameServer {
             player.canvasWidth = spawnWidth;
             player.canvasHeight = spawnHeight;
             player.angle = 0;
-            // Keep level, XP, stats, balance - they continue with progress
+            // Keep level, XP, stats - balance synced from client above, then server deducts stake
             console.log(`Player ${socket.id} joining room $${stake} (level ${player.level})`);
         } else if (!player) {
-            // Create new player
+            // Create new player with balance from client (original balance before deduction)
             player = this.playerManager.createPlayer(
                 socket.id,
                 playerName,
@@ -145,6 +148,16 @@ class GameServer {
             );
         }
 
+        // Deduct stake from player balance (server-authoritative)
+        // Client sends original balance (before deduction), so server deducts stake here
+        if (player.balance < stake) {
+            socket.emit('joinRoomError', { message: 'Insufficient balance' });
+            return;
+        }
+        
+        player.balance -= stake;
+        player.balance = Math.max(0, player.balance);
+        
         // Set socket reference
         player.socket = socket;
         player.roomStake = stake;
@@ -161,6 +174,7 @@ class GameServer {
         socket.emit('joinedRoom', {
             stake: stake,
             playerId: socket.id,
+            balance: player.balance,  // Send server-authoritative balance
             playerData: {
                 x: player.x,
                 y: player.y,
@@ -385,6 +399,8 @@ class GameServer {
         const refund = stake * GameConfig.ECONOMY.KILL_BUTTON_REFUND_PERCENT;
         const fee = stake * GameConfig.ECONOMY.KILL_BUTTON_FEE_PERCENT;
         
+        // Refund 90% of stake (stake was already deducted when joining room)
+        // Note: Stake was deducted in handleJoinRoom, so we just add the refund
         player.balance += refund;
         player.balance = Math.max(0, player.balance);
         
@@ -721,6 +737,10 @@ class GameServer {
             console.log(`💰 ${killer.name} killed ${victim.name}: +$${reward.toFixed(2)}, +${xpReward} XP`);
         }
         
+        // Victim loses full stake (stake was already deducted when joining room)
+        // No need to deduct again - stake is already lost
+        // Note: The stake was deducted in handleJoinRoom, so victim already lost it
+        
         // Remove victim from room FIRST (before notifications)
         this.removePlayerFromRoom(victim.id);
         
@@ -728,7 +748,8 @@ class GameServer {
         victim.socket.emit('playerDied', {
             playerId: victim.id,
             killerId: killer && killer.id !== victim.id ? killer.id : null,
-            lostStake: victimStake
+            lostStake: victimStake,
+            newBalance: victim.balance  // Send current balance (stake already deducted)
         });
         
         // Broadcast player left to room (so other players know victim left)
