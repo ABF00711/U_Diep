@@ -120,11 +120,11 @@ class GameServer {
             player.balance = balance;
             
             player.isDead = false;
-            player.health = GameConfig.TANK.DEFAULT_HEALTH;
             player.maxHealth = GameConfig.TANK.DEFAULT_MAX_HEALTH;
             
-            // Recalculate maxHealth based on stats (preserve stat allocations)
+            // Recalculate maxHealth from stats (preserve stat allocations), then spawn at full health
             this.playerManager.applyStatChanges(player);
+            player.health = player.maxHealth;
             
             player.x = minX + Math.random() * (maxX - minX);
             player.y = minY + Math.random() * (maxY - minY);
