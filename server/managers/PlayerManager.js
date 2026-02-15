@@ -86,8 +86,7 @@ class PlayerManager {
      * Apply stat changes to a player
      */
     applyStatChanges(player) {
-        // Update max health based on stat points
-        player.maxHealth = Math.floor(player.maxHealth + player.maxHealth * GameConfig.TANK.HEALTH_MULTIPLIER);
+        player.maxHealth += Math.floor(player.maxHealth * GameConfig.TANK.HEALTH_MULTIPLIER);
         if (player.health > player.maxHealth) {
             player.health = player.maxHealth;
         }
