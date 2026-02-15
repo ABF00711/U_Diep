@@ -92,10 +92,9 @@ class PlayerManager {
             // Flat +5 HP per maxHealth stat point (server-authoritative; client receives via gameState)
             const base = GameConfig.TANK.DEFAULT_MAX_HEALTH;
             const points = player.stats.maxHealth || 0;
+            const currentHealthPercentage = player.health / player.maxHealth;
             player.maxHealth = base + (points * 50);
-            if (player.health > player.maxHealth) {
-                player.health = player.maxHealth;
-            }
+            player.health = player.maxHealth * currentHealthPercentage;
         }
         // Other stats (reload, movementSpeed, bulletDamage, etc.) are applied when creating bullets or calculating movement
     }
