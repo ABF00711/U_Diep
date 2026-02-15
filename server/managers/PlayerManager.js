@@ -83,15 +83,21 @@ class PlayerManager {
     }
 
     /**
-     * Apply stat changes to a player
+     * Apply stat changes to a player (only for stats that affect derived values on the server).
+     * @param {object} player - Player object
+     * @param {string} [statName] - Which stat was just allocated; omit to recompute from current stats (e.g. on rejoin)
      */
-    applyStatChanges(player) {
-        // Update max health based on stat points
-        player.maxHealth = Math.floor(player.maxHealth + player.maxHealth * GameConfig.TANK.HEALTH_MULTIPLIER);
-        if (player.health > player.maxHealth) {
-            player.health = player.maxHealth;
+    applyStatChanges(player, statName) {
+        if (statName === undefined || statName === null || statName === 'maxHealth') {
+            // Flat +5 HP per maxHealth stat point (server-authoritative; client receives via gameState)
+            const base = GameConfig.TANK.DEFAULT_MAX_HEALTH;
+            const points = player.stats.maxHealth || 0;
+            player.maxHealth = base + (points * 50);
+            if (player.health > player.maxHealth) {
+                player.health = player.maxHealth;
+            }
         }
-        // Other stats are applied when creating bullets or calculating movement
+        // Other stats (reload, movementSpeed, bulletDamage, etc.) are applied when creating bullets or calculating movement
     }
 
     /**

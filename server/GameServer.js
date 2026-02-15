@@ -374,8 +374,8 @@ class GameServer {
             player.pendingStatAllocation = false;
         }
 
-        // Apply stat changes
-        this.playerManager.applyStatChanges(player);
+        // Apply stat changes (only maxHealth is derived on server; others used at use-time)
+        this.playerManager.applyStatChanges(player, statName);
 
         // Send confirmation to player
         socket.emit('statAllocated', {

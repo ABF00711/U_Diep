@@ -114,19 +114,14 @@ class NetworkManager {
 
         // Player events
         this.socket.on('statAllocated', (data) => {
-            // Update local player stats from server confirmation
+            // Sync stats from server (online-only: maxHealth and other derived values come from gameState)
             if (this.game.playerTank) {
-                // Update stat value
                 if (data.statName && this.game.playerTank.stats.hasOwnProperty(data.statName)) {
                     this.game.playerTank.stats[data.statName] = data.newValue;
-                    // Apply stat changes locally
-                    this.game.playerTank.applyStatChanges(data.statName);
                 }
-                // Update stat points
                 if (data.remainingPoints !== undefined) {
                     this.game.playerTank.statPoints = data.remainingPoints;
                 }
-                // Update UI if visible
                 if (this.game.statAllocationUI && this.game.statAllocationUI.isVisible) {
                     this.game.statAllocationUI.updateDisplay();
                 }
