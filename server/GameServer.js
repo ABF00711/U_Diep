@@ -716,7 +716,7 @@ class GameServer {
             } else if (levelDiff < 0) {
                 xpReward = Math.max(GameConfig.XP.MIN_KILL_XP, GameConfig.XP.BASE_KILL_XP + (levelDiff * 5));
             }
-            xpReward = Math.min(xpReward, GameConfig.XP.MAX_KILL_XP);
+            xpReward = Math.max(xpReward, GameConfig.XP.MAX_KILL_XP);
             
             // Update killer XP and level
             this.playerManager.addXP(killer, xpReward);
