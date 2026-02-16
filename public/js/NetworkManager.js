@@ -25,12 +25,12 @@ class NetworkManager {
             return;
         }
         
-        // Connect to Socket.io server
-        // If accessing via file://, use localhost:3000, otherwise use current host
+        // Connect to Socket.io server with auth token (for account system)
         const serverUrl = window.location.protocol === 'file:' 
             ? 'http://localhost:3000' 
             : window.location.origin;
-        this.socket = io(serverUrl);
+        const token = typeof localStorage !== 'undefined' ? localStorage.getItem('u_diep_token') : null;
+        this.socket = io(serverUrl, { auth: { token } });
 
         this.socket.on('connect', () => {
             console.log('✅ Connected to server:', this.socket.id);
@@ -80,8 +80,14 @@ class NetworkManager {
         });
 
         this.socket.on('joinRoomError', (data) => {
-            alert(`Failed to join room: ${data.message}`);
-            // Refund wager if failed
+            const msg = data.message || 'Unknown error';
+            if (msg.toLowerCase().includes('log in')) {
+                if (typeof localStorage !== 'undefined') localStorage.removeItem('u_diep_token');
+                this.game.showAuthScreen();
+                if (!this.game.setupAuthForm) return;
+                this.game.setupAuthForm();
+            }
+            alert(`Failed to join room: ${msg}`);
             if (this.game.economy.isInMatch()) {
                 const wager = this.game.economy.getCurrentWager();
                 this.game.economy.refundWager(wager);

@@ -134,29 +134,152 @@ class Game {
             this.killSelf();
         });
 
-        // Hide loading screen
+        // Logout button
+        const logoutBtn = document.getElementById('logoutButton');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', () => {
+                if (typeof localStorage !== 'undefined') localStorage.removeItem('u_diep_token');
+                this.showAuthScreen();
+            });
+        }
+
+        // Hide loading screen and show auth or room selection
         setTimeout(() => {
             document.getElementById('loadingScreen').classList.add('hidden');
-            this.showRoomSelection();
-            // Initialize balance display
-            this.updateBalanceDisplay();
-            
-            // Request room counts after connection is established
-            if (this.networkManager && this.networkManager.isConnected()) {
-                // Small delay to ensure socket is ready
-                setTimeout(() => {
-                    this.networkManager.requestRoomCounts();
-                }, 100);
+            const token = typeof localStorage !== 'undefined' ? localStorage.getItem('u_diep_token') : null;
+            if (!token) {
+                this.showAuthScreen();
+                this.setupAuthForm();
+            } else {
+                this.fetchUserAndShowRoomSelection();
             }
         }, GameConfig.UI.LOADING_SCREEN_DELAY);
     }
 
+    showAuthScreen() {
+        document.getElementById('authScreen').classList.remove('hidden');
+        document.getElementById('roomSelection').classList.add('hidden');
+        document.getElementById('minimap').classList.add('hidden');
+        this.state = 'menu';
+    }
+
+    setupAuthForm() {
+        if (this.authFormSetup) return;
+        this.authFormSetup = true;
+        const form = document.getElementById('authForm');
+        const tabLogin = document.getElementById('authTabLogin');
+        const tabRegister = document.getElementById('authTabRegister');
+        const emailGroup = document.getElementById('authEmailGroup');
+        const usernameGroup = document.getElementById('authUsernameGroup');
+        const submitBtn = document.getElementById('authSubmit');
+        const errorEl = document.getElementById('authError');
+
+        const showError = (msg) => {
+            errorEl.textContent = msg;
+            errorEl.classList.remove('hidden');
+        };
+        const clearError = () => {
+            errorEl.textContent = '';
+            errorEl.classList.add('hidden');
+        };
+
+        const isRegister = () => tabRegister.classList.contains('active');
+        tabLogin.addEventListener('click', () => {
+            tabLogin.classList.add('active');
+            tabRegister.classList.remove('active');
+            submitBtn.textContent = 'Login';
+            form.reset();
+            clearError();
+        });
+        tabRegister.addEventListener('click', () => {
+            tabRegister.classList.add('active');
+            tabLogin.classList.remove('active');
+            submitBtn.textContent = 'Register';
+            form.reset();
+            clearError();
+        });
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            clearError();
+            const email = document.getElementById('authEmail').value.trim();
+            const username = document.getElementById('authUsername').value.trim();
+            const password = document.getElementById('authPassword').value;
+            const apiBase = window.location.origin;
+            const endpoint = isRegister() ? '/api/auth/register' : '/api/auth/login';
+            const body = isRegister()
+                ? { email, username, password }
+                : (email ? { email, password } : { username, password });
+
+            if (!password || password.length < 6) {
+                showError('Password must be at least 6 characters');
+                return;
+            }
+            if (isRegister() && (!email || !username)) {
+                showError('Email and username are required');
+                return;
+            }
+            if (!isRegister() && !email && !username) {
+                showError('Enter email or username');
+                return;
+            }
+
+            try {
+                const res = await fetch(apiBase + endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    showError(data.error || 'Request failed');
+                    return;
+                }
+                if (data.token) {
+                    localStorage.setItem('u_diep_token', data.token);
+                    if (data.user && data.user.balance != null) {
+                        this.economy.setBalance(data.user.balance);
+                    }
+                    window.location.reload();
+                }
+            } catch (err) {
+                showError('Network error. Try again.');
+            }
+        });
+    }
+
+    fetchUserAndShowRoomSelection() {
+        const apiBase = window.location.origin;
+        const token = localStorage.getItem('u_diep_token');
+        fetch(apiBase + '/api/auth/me', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        })
+            .then(res => res.ok ? res.json() : Promise.reject())
+            .then(data => {
+                if (data.user) {
+                    this.economy.setBalance(data.user.balance);
+                    const welcome = document.getElementById('welcomeUser');
+                    if (welcome) welcome.textContent = 'Welcome, ' + (data.user.username || data.user.email) + '!';
+                }
+                this.showRoomSelection();
+                this.updateBalanceDisplay();
+                if (this.networkManager && this.networkManager.isConnected()) {
+                    setTimeout(() => this.networkManager.requestRoomCounts(), 100);
+                }
+            })
+            .catch(() => {
+                localStorage.removeItem('u_diep_token');
+                this.showAuthScreen();
+                this.setupAuthForm();
+            });
+    }
+
     showRoomSelection() {
+        document.getElementById('authScreen').classList.add('hidden');
         document.getElementById('roomSelection').classList.remove('hidden');
         document.getElementById('minimap').classList.add('hidden');
         this.state = 'menu';
         
-        // Request room counts from server
         if (this.networkManager && this.networkManager.isConnected()) {
             this.networkManager.requestRoomCounts();
         }

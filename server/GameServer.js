@@ -7,6 +7,7 @@ const PlayerManager = require('./managers/PlayerManager.js');
 const BotManager = require('./managers/BotManager.js');
 const BulletManager = require('./managers/BulletManager.js');
 const CollisionManager = require('./managers/CollisionManager.js');
+const userRepository = require('./db/userRepository.js');
 
 class GameServer {
     constructor(io) {
@@ -25,8 +26,13 @@ class GameServer {
         this.io.on('connection', (socket) => {
             console.log(`Player connected: ${socket.id}`);
 
-            socket.on('joinRoom', (data) => {
-                this.handleJoinRoom(socket, data);
+            socket.on('joinRoom', async (data) => {
+                try {
+                    await this.handleJoinRoom(socket, data);
+                } catch (err) {
+                    console.error('joinRoom error:', err);
+                    socket.emit('joinRoomError', { message: 'Server error' });
+                }
             });
 
             socket.on('playerInput', (data) => {
@@ -37,12 +43,12 @@ class GameServer {
                 this.handleStatAllocation(socket, data);
             });
 
-            socket.on('killSelf', () => {
-                this.handleKillSelf(socket);
+            socket.on('killSelf', async () => {
+                await this.handleKillSelf(socket);
             });
 
-            socket.on('disconnect', () => {
-                this.handleDisconnect(socket);
+            socket.on('disconnect', async () => {
+                await this.handleDisconnect(socket);
             });
 
             socket.on('playerDamage', (data) => {
@@ -58,8 +64,14 @@ class GameServer {
 
     // ==================== Socket Handlers ====================
 
-    handleJoinRoom(socket, data) {
-        const { stake, playerName, balance, canvasWidth, canvasHeight } = data;
+    async handleJoinRoom(socket, data) {
+        const { stake, canvasWidth, canvasHeight } = data;
+
+        // Require authenticated user (account system)
+        if (!socket.user) {
+            socket.emit('joinRoomError', { message: 'Please log in to join a room' });
+            return;
+        }
 
         // Validate stake
         if (!GameConfig.ECONOMY.ROOM_STAKES.includes(stake)) {
@@ -102,6 +114,18 @@ class GameServer {
         // Store canvas dimensions for player (used for UI/viewport, not world bounds)
         const spawnWidth = canvasWidth || 1920;
         const spawnHeight = canvasHeight || 1080;
+
+        // Load balance from database (authoritative)
+        let balance;
+        try {
+            balance = await userRepository.getBalance(socket.user.id);
+        } catch (err) {
+            console.error('DB getBalance error:', err);
+            socket.emit('joinRoomError', { message: 'Failed to load balance' });
+            return;
+        }
+
+        const playerName = socket.user.username || socket.user.email || 'Player';
         
         // Get player (after potential room switch cleanup)
         let player = this.playerManager.getPlayer(socket.id);
@@ -116,8 +140,8 @@ class GameServer {
                 });
             }
             
-            // Sync balance from client (client sends original balance before deduction)
             player.balance = balance;
+            if (player.userId == null) player.userId = socket.user.id;
             
             player.isDead = false;
             player.maxHealth = GameConfig.TANK.DEFAULT_MAX_HEALTH;
@@ -136,7 +160,7 @@ class GameServer {
             // Keep level, XP, stats - balance synced from client above, then server deducts stake
             console.log(`Player ${socket.id} joining room $${stake} (level ${player.level})`);
         } else if (!player) {
-            // Create new player with balance from client (original balance before deduction)
+            // Create new player (balance from DB, userId for persisting balance)
             player = this.playerManager.createPlayer(
                 socket.id,
                 playerName,
@@ -144,12 +168,12 @@ class GameServer {
                 minX + Math.random() * (maxX - minX),
                 minY + Math.random() * (maxY - minY),
                 spawnWidth,
-                spawnHeight
+                spawnHeight,
+                socket.user.id
             );
         }
 
         // Deduct stake from player balance (server-authoritative)
-        // Client sends original balance (before deduction), so server deducts stake here
         if (player.balance < stake) {
             socket.emit('joinRoomError', { message: 'Insufficient balance' });
             return;
@@ -157,6 +181,18 @@ class GameServer {
         
         player.balance -= stake;
         player.balance = Math.max(0, player.balance);
+
+        // Persist balance to database
+        if (player.userId) {
+            try {
+                await userRepository.updateBalance(player.userId, player.balance);
+            } catch (err) {
+                console.error('DB updateBalance error on join:', err);
+                player.balance += stake;
+                socket.emit('joinRoomError', { message: 'Failed to update balance' });
+                return;
+            }
+        }
         
         // Set socket reference
         player.socket = socket;
@@ -388,7 +424,7 @@ class GameServer {
         console.log(`✅ Stat allocated: ${player.name} allocated ${statName} (${player.stats[statName]}/${GameConfig.TANK.MAX_STAT_POINTS}), ${player.statPoints} points remaining`);
     }
 
-    handleKillSelf(socket) {
+    async handleKillSelf(socket) {
         const player = this.playerManager.getPlayer(socket.id);
         if (!player || !player.roomStake) {
             console.warn(`Kill self requested but player not in room: ${socket.id}`);
@@ -403,6 +439,13 @@ class GameServer {
         // Note: Stake was deducted in handleJoinRoom, so we just add the refund
         player.balance += refund;
         player.balance = Math.max(0, player.balance);
+        if (player.userId) {
+            try {
+                await userRepository.updateBalance(player.userId, player.balance);
+            } catch (err) {
+                console.error('DB updateBalance error on kill self:', err);
+            }
+        }
         
         // Remove player from room
         this.removePlayerFromRoom(socket.id);
@@ -426,7 +469,7 @@ class GameServer {
         console.log(`Kill self processed: Refund $${refund.toFixed(2)}, Fee $${fee.toFixed(2)}`);
     }
 
-    handleDisconnect(socket) {
+    async handleDisconnect(socket) {
         const player = this.playerManager.getPlayer(socket.id);
         if (!player) {
             console.log(`Unknown player disconnected: ${socket.id}`);
@@ -438,7 +481,18 @@ class GameServer {
         // Store room stake before removal
         const roomStake = player.roomStake;
 
-        // Remove from room first
+        // Disconnect: full refund (persist to DB)
+        if (roomStake && player.userId) {
+            player.balance += roomStake;
+            player.balance = Math.max(0, player.balance);
+            try {
+                await userRepository.updateBalance(player.userId, player.balance);
+            } catch (err) {
+                console.error('DB updateBalance error on disconnect:', err);
+            }
+        }
+
+        // Remove from room
         if (roomStake) {
             this.removePlayerFromRoom(socket.id);
 
@@ -690,7 +744,7 @@ class GameServer {
 
     // ==================== Event Handlers ====================
 
-    handlePlayerDeath(killer, victim) {
+    async handlePlayerDeath(killer, victim) {
         const roomStake = victim.roomStake;
         if (!roomStake) return; // Already handled
         
@@ -707,6 +761,13 @@ class GameServer {
             
             killer.balance += reward;
             killer.balance = Math.max(0, killer.balance);
+            if (killer.userId) {
+                try {
+                    await userRepository.updateBalance(killer.userId, killer.balance);
+                } catch (err) {
+                    console.error('DB updateBalance error on kill reward:', err);
+                }
+            }
             
             // Calculate XP reward based on level difference
             let xpReward = GameConfig.XP.BASE_KILL_XP;
@@ -741,6 +802,15 @@ class GameServer {
         // No need to deduct again - stake is already lost
         // Note: The stake was deducted in handleJoinRoom, so victim already lost it
         
+        // Sync victim balance to DB (stake was already deducted at join)
+        if (victim.userId) {
+            try {
+                await userRepository.updateBalance(victim.userId, victim.balance);
+            } catch (err) {
+                console.error('DB updateBalance error on victim death:', err);
+            }
+        }
+
         // Remove victim from room FIRST (before notifications)
         this.removePlayerFromRoom(victim.id);
         

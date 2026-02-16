@@ -10,10 +10,12 @@ class PlayerManager {
 
     /**
      * Create a new player
+     * @param {number} [userId] - Database user id (for balance persistence)
      */
-    createPlayer(socketId, playerName, balance, x, y, canvasWidth, canvasHeight) {
+    createPlayer(socketId, playerName, balance, x, y, canvasWidth, canvasHeight, userId = null) {
         const player = {
             id: socketId,
+            userId: userId,
             name: playerName || `Player${socketId.slice(0, 6)}`,
             socket: null, // Will be set by caller
             roomStake: null,

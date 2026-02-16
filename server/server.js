@@ -17,7 +17,22 @@ const io = socketIo(server, {
     }
 });
 
+// Socket.io: verify JWT and attach user (id, email, username, balance) to socket
+const { verifyToken } = require('./middleware/auth.js');
+io.use(async (socket, next) => {
+    const token = socket.handshake.auth && socket.handshake.auth.token;
+    socket.user = await verifyToken(token);
+    next();
+});
+
 const PORT = process.env.PORT || 3000;
+
+// JSON body parser for API
+app.use(express.json());
+
+// Auth API (register, login, me)
+const authRoutes = require('./routes/auth.js');
+app.use('/api/auth', authRoutes);
 
 // Serve static files from the public directory
 const publicPath = path.join(__dirname, '..', 'public');
