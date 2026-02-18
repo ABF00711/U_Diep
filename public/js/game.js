@@ -519,7 +519,7 @@ class Game {
     update(deltaTime) {
         if (this.state !== 'playing') return;
 
-        // Check for pending stat allocation (show UI if needed)
+        // Auto-show stat allocation when player levels up (has points to allocate)
         if (this.playerTank && this.playerTank.hasPendingStatAllocation() && !this.statAllocationUI.isOpen()) {
             this.statAllocationUI.show();
         }
@@ -705,13 +705,13 @@ class Game {
                         statPointsEl.style.cursor = 'pointer';
                         statPointsEl.style.textDecoration = 'underline';
                         statPointsEl.addEventListener('click', () => {
-                            if (!this.statAllocationUI.isOpen()) {
+                            if (statPoints > 0 && !this.statAllocationUI.isOpen()) {
                                 this.statAllocationUI.show();
                             }
                         });
                         document.getElementById('hud').appendChild(statPointsEl);
                     }
-                    statPointsEl.textContent = `Stat Points: ${statPoints} (Click to allocate)`;
+                    statPointsEl.textContent = `Stat Points: ${statPoints} (bottom-left or 1-8)`;
                 } else if (statPointsEl) {
                     statPointsEl.textContent = '';
                 }
