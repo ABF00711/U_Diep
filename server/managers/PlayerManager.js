@@ -9,47 +9,87 @@ class PlayerManager {
     }
 
     /**
+     * Default stats object (all zeros).
+     */
+    getDefaultStats() {
+        return {
+            maxHealth: 0, reload: 0, movementSpeed: 0, bulletSpeed: 0,
+            bulletDamage: 0, bulletPenetration: 0, bulletSize: 0, bodyDamage: 0, healthRegen: 0
+        };
+    }
+
+    /**
+     * Get XP required for next level at a given level (for death penalty reset).
+     */
+    getXpToNextLevelForLevel(level) {
+        let x = GameConfig.XP.BASE_XP_TO_NEXT_LEVEL;
+        for (let i = 1; i < level; i++) {
+            x = Math.floor(x * GameConfig.XP.XP_MULTIPLIER_PER_LEVEL);
+        }
+        return x;
+    }
+
+    /**
+     * Apply death penalty: level halved, stats reset, player must re-allocate.
+     */
+    applyDeathPenalty(player) {
+        const newLevel = Math.max(1, Math.floor(player.level / 2));
+        player.level = newLevel;
+        player.xp = 0;
+        player.xpToNextLevel = this.getXpToNextLevelForLevel(newLevel);
+        player.stats = { ...this.getDefaultStats() };
+        player.statPoints = Math.max(0, newLevel - 1);
+        player.pendingStatAllocation = player.statPoints > 0;
+        player.maxHealth = GameConfig.TANK.DEFAULT_MAX_HEALTH;
+        player.health = player.maxHealth;
+        this.applyStatChanges(player);
+    }
+
+    /**
      * Create a new player
      * @param {number} [userId] - Database user id (for balance persistence)
+     * @param {object} [gameStats] - { level, xp, xpToNextLevel, stats } from DB (persisted progress)
      */
-    createPlayer(socketId, playerName, balance, x, y, canvasWidth, canvasHeight, userId = null) {
+    createPlayer(socketId, playerName, balance, x, y, canvasWidth, canvasHeight, userId = null, gameStats = null) {
+        const defaultStats = this.getDefaultStats();
+        const stats = gameStats && gameStats.stats
+            ? { ...defaultStats, ...gameStats.stats }
+            : { ...defaultStats };
+        const level = gameStats && gameStats.level != null ? gameStats.level : 1;
+        const xp = gameStats && gameStats.xp != null ? gameStats.xp : 0;
+        const xpToNextLevel = gameStats && gameStats.xpToNextLevel != null ? gameStats.xpToNextLevel : GameConfig.XP.BASE_XP_TO_NEXT_LEVEL;
+        const totalAllocated = Object.values(stats).reduce((s, v) => s + (Number(v) || 0), 0);
+        const statPoints = Math.max(0, (level - 1) - totalAllocated);
+
         const player = {
             id: socketId,
             userId: userId,
             name: playerName || `Player${socketId.slice(0, 6)}`,
-            socket: null, // Will be set by caller
+            socket: null,
             roomStake: null,
             x: x,
             y: y,
-            vx: 0, // Velocity for squirt effect
-            vy: 0, // Velocity for squirt effect
+            vx: 0,
+            vy: 0,
             canvasWidth: canvasWidth,
             canvasHeight: canvasHeight,
             angle: 0,
-            level: 1,
+            level,
             health: GameConfig.TANK.DEFAULT_HEALTH,
             maxHealth: GameConfig.TANK.DEFAULT_MAX_HEALTH,
-            xp: 0,
-            xpToNextLevel: GameConfig.XP.BASE_XP_TO_NEXT_LEVEL,
+            xp,
+            xpToNextLevel,
             lastHealthUpdate: Date.now(),
-            stats: {
-                maxHealth: 0,
-                reload: 0,
-                movementSpeed: 0,
-                bulletSpeed: 0,
-                bulletDamage: 0,
-                bulletPenetration: 0,
-                bulletSize: 0,
-                bodyDamage: 0,
-                healthRegen: 0
-            },
-            statPoints: 0,
-            pendingStatAllocation: false,
+            stats,
+            statPoints,
+            pendingStatAllocation: statPoints > 0,
             lastShotTime: 0,
-            lastBodyDamageTime: {}, // Track last body damage time per target (targetId -> timestamp)
+            lastBodyDamageTime: {},
             isDead: false,
             balance: balance || GameConfig.ECONOMY.INITIAL_BALANCE
         };
+        this.applyStatChanges(player, 'maxHealth');
+        if (player.health > player.maxHealth) player.health = player.maxHealth;
 
         this.players.set(socketId, player);
         return player;

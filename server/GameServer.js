@@ -39,8 +39,8 @@ class GameServer {
                 this.handlePlayerInput(socket, data);
             });
 
-            socket.on('statAllocation', (data) => {
-                this.handleStatAllocation(socket, data);
+            socket.on('statAllocation', async (data) => {
+                await this.handleStatAllocation(socket, data);
             });
 
             socket.on('killSelf', async () => {
@@ -115,13 +115,15 @@ class GameServer {
         const spawnWidth = canvasWidth || 1920;
         const spawnHeight = canvasHeight || 1080;
 
-        // Load balance from database (authoritative)
+        // Load balance and game stats from database (authoritative)
         let balance;
+        let gameStats = null;
         try {
             balance = await userRepository.getBalance(socket.user.id);
+            gameStats = await userRepository.getGameStats(socket.user.id);
         } catch (err) {
-            console.error('DB getBalance error:', err);
-            socket.emit('joinRoomError', { message: 'Failed to load balance' });
+            console.error('DB load error:', err);
+            socket.emit('joinRoomError', { message: 'Failed to load data' });
             return;
         }
 
@@ -131,10 +133,8 @@ class GameServer {
         let player = this.playerManager.getPlayer(socket.id);
         
         if (player && !player.roomStake) {
-            // Player exists but was removed from room (died/disconnected/switched) - reset for rejoin
-            // CRITICAL: Ensure player is fully removed from any old Socket.io rooms first
+            // Rejoin: apply persisted level, xp, stats from DB
             if (player.socket) {
-                // Leave all possible room sockets (safety check to prevent duplicate subscriptions)
                 GameConfig.ECONOMY.ROOM_STAKES.forEach(possibleStake => {
                     player.socket.leave(`room_${possibleStake}`);
                 });
@@ -142,25 +142,30 @@ class GameServer {
             
             player.balance = balance;
             if (player.userId == null) player.userId = socket.user.id;
+            if (gameStats) {
+                player.level = gameStats.level;
+                player.xp = gameStats.xp;
+                player.xpToNextLevel = gameStats.xpToNextLevel;
+                player.stats = { ...this.playerManager.getDefaultStats(), ...gameStats.stats };
+                const totalAllocated = Object.values(player.stats).reduce((s, v) => s + (Number(v) || 0), 0);
+                player.statPoints = Math.max(0, (player.level - 1) - totalAllocated);
+                player.pendingStatAllocation = player.statPoints > 0;
+            }
             
             player.isDead = false;
-            player.maxHealth = GameConfig.TANK.DEFAULT_MAX_HEALTH;
-            
-            // Recalculate maxHealth from stats (preserve stat allocations), then spawn at full health
             this.playerManager.applyStatChanges(player);
             player.health = player.maxHealth;
             
             player.x = minX + Math.random() * (maxX - minX);
             player.y = minY + Math.random() * (maxY - minY);
-            player.vx = 0; // Reset velocity
-            player.vy = 0; // Reset velocity
+            player.vx = 0;
+            player.vy = 0;
             player.canvasWidth = spawnWidth;
             player.canvasHeight = spawnHeight;
             player.angle = 0;
-            // Keep level, XP, stats - balance synced from client above, then server deducts stake
             console.log(`Player ${socket.id} joining room $${stake} (level ${player.level})`);
         } else if (!player) {
-            // Create new player (balance from DB, userId for persisting balance)
+            // New session: create player with persisted game stats from DB
             player = this.playerManager.createPlayer(
                 socket.id,
                 playerName,
@@ -169,7 +174,8 @@ class GameServer {
                 minY + Math.random() * (maxY - minY),
                 spawnWidth,
                 spawnHeight,
-                socket.user.id
+                socket.user.id,
+                gameStats
             );
         }
 
@@ -375,7 +381,7 @@ class GameServer {
         }
     }
 
-    handleStatAllocation(socket, data) {
+    async handleStatAllocation(socket, data) {
         const player = this.playerManager.getPlayer(socket.id);
         if (!player) {
             console.warn(`Stat allocation from unknown player: ${socket.id}`);
@@ -412,6 +418,19 @@ class GameServer {
 
         // Apply stat changes (only maxHealth is derived on server; others used at use-time)
         this.playerManager.applyStatChanges(player, statName);
+
+        if (player.userId) {
+            try {
+                await userRepository.updateGameStats(player.userId, {
+                    level: player.level,
+                    xp: player.xp,
+                    xpToNextLevel: player.xpToNextLevel,
+                    stats: player.stats
+                });
+            } catch (err) {
+                console.error('DB updateGameStats error (stat allocation):', err);
+            }
+        }
 
         // Send confirmation to player
         socket.emit('statAllocated', {
@@ -781,6 +800,18 @@ class GameServer {
             
             // Update killer XP and level
             this.playerManager.addXP(killer, xpReward);
+            if (killer.userId) {
+                try {
+                    await userRepository.updateGameStats(killer.userId, {
+                        level: killer.level,
+                        xp: killer.xp,
+                        xpToNextLevel: killer.xpToNextLevel,
+                        stats: killer.stats
+                    });
+                } catch (err) {
+                    console.error('DB updateGameStats error (killer):', err);
+                }
+            }
             
             // Notify killer (they stay in game and continue playing)
             killer.socket.emit('playerKilled', {
@@ -798,28 +829,38 @@ class GameServer {
             console.log(`💰 ${killer.name} killed ${victim.name}: +$${reward.toFixed(2)}, +${xpReward} XP`);
         }
         
-        // Victim loses full stake (stake was already deducted when joining room)
-        // No need to deduct again - stake is already lost
-        // Note: The stake was deducted in handleJoinRoom, so victim already lost it
-        
-        // Sync victim balance to DB (stake was already deducted at join)
+        // Death penalty: reduce level to half, reset stats, must re-allocate (any death: killed by player or bot)
+        const oldLevel = victim.level;
+        this.playerManager.applyDeathPenalty(victim);
         if (victim.userId) {
             try {
                 await userRepository.updateBalance(victim.userId, victim.balance);
+                await userRepository.updateGameStats(victim.userId, {
+                    level: victim.level,
+                    xp: victim.xp,
+                    xpToNextLevel: victim.xpToNextLevel,
+                    stats: victim.stats
+                });
             } catch (err) {
-                console.error('DB updateBalance error on victim death:', err);
+                console.error('DB update error on victim death:', err);
             }
         }
 
         // Remove victim from room FIRST (before notifications)
         this.removePlayerFromRoom(victim.id);
         
-        // Notify victim directly (they died and lost stake - must exit room)
+        // Notify victim (lost stake, level halved, must re-allocate stats on next join)
         victim.socket.emit('playerDied', {
             playerId: victim.id,
             killerId: killer && killer.id !== victim.id ? killer.id : null,
             lostStake: victimStake,
-            newBalance: victim.balance  // Send current balance (stake already deducted)
+            newBalance: victim.balance,
+            deathPenalty: true,
+            newLevel: victim.level,
+            oldLevel,
+            stats: victim.stats,
+            statPoints: victim.statPoints,
+            pendingStatAllocation: victim.pendingStatAllocation
         });
         
         // Broadcast player left to room (so other players know victim left)
@@ -836,9 +877,21 @@ class GameServer {
         console.log(`💀 ${victim.name} was killed by ${killer && killer.id !== victim.id ? killer.name : 'unknown'} - removed from room`);
     }
 
-    handleBotKilled(player, bot) {
+    async handleBotKilled(player, bot) {
         // Give XP to player
         this.playerManager.addXP(player, bot.xpReward);
+        if (player.userId) {
+            try {
+                await userRepository.updateGameStats(player.userId, {
+                    level: player.level,
+                    xp: player.xp,
+                    xpToNextLevel: player.xpToNextLevel,
+                    stats: player.stats
+                });
+            } catch (err) {
+                console.error('DB updateGameStats error (bot kill):', err);
+            }
+        }
         
         // Notify player
         player.socket.emit('botKilled', {

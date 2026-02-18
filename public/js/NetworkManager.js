@@ -777,12 +777,11 @@ class NetworkManager {
             }
             
             const lostStake = data.lostStake || this.game.economy.getCurrentWager();
-            
-            // Show message
-            this.game.showMessage(
-                `You died! Lost $${lostStake.toFixed(2)}`,
-                GameConfig.UI.MESSAGE_DURATION_LONG
-            );
+            let msg = `You died! Lost $${lostStake.toFixed(2)}`;
+            if (data.deathPenalty && data.newLevel != null) {
+                msg += `. Level reduced to ${data.newLevel} - re-allocate your stats when you rejoin.`;
+            }
+            this.game.showMessage(msg, GameConfig.UI.MESSAGE_DURATION_LONG);
             this.game.updateBalanceDisplay();
             
             // Clean up and exit to menu
