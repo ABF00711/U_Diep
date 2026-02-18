@@ -143,17 +143,55 @@ class Game {
             });
         }
 
-        // Hide loading screen and show auth or room selection
+        // Hide loading screen, fetch server announcement, then show auth or room selection
         setTimeout(() => {
             document.getElementById('loadingScreen').classList.add('hidden');
-            const token = typeof localStorage !== 'undefined' ? localStorage.getItem('u_diep_token') : null;
-            if (!token) {
-                this.showAuthScreen();
-                this.setupAuthForm();
-            } else {
-                this.fetchUserAndShowRoomSelection();
-            }
+            this.showAnnouncementThenStart();
         }, GameConfig.UI.LOADING_SCREEN_DELAY);
+    }
+
+    showAnnouncementThenStart() {
+        const apiBase = window.location.origin;
+        fetch(apiBase + '/api/announcement')
+            .then(res => res.ok ? res.json() : { title: '', content: '' })
+            .catch(() => ({ title: '', content: '' }))
+            .then((data) => {
+                const title = (data.title || '').trim();
+                const content = (data.content || '').trim();
+                if (title || content) {
+                    this.showAnnouncement(title, content, () => this.afterAnnouncementDismissed());
+                } else {
+                    this.afterAnnouncementDismissed();
+                }
+            });
+    }
+
+    showAnnouncement(title, content, onDismiss) {
+        const modal = document.getElementById('announcementModal');
+        const titleEl = document.getElementById('announcementTitle');
+        const bodyEl = document.getElementById('announcementBody');
+        const okBtn = document.getElementById('announcementOk');
+        if (!modal || !titleEl || !bodyEl || !okBtn) return;
+        titleEl.textContent = title || 'Announcement';
+        bodyEl.textContent = content || '';
+        bodyEl.style.display = content ? 'block' : 'none';
+        modal.classList.remove('hidden');
+        const handler = () => {
+            okBtn.removeEventListener('click', handler);
+            modal.classList.add('hidden');
+            if (typeof onDismiss === 'function') onDismiss();
+        };
+        okBtn.addEventListener('click', handler);
+    }
+
+    afterAnnouncementDismissed() {
+        const token = typeof localStorage !== 'undefined' ? localStorage.getItem('u_diep_token') : null;
+        if (!token) {
+            this.showAuthScreen();
+            this.setupAuthForm();
+        } else {
+            this.fetchUserAndShowRoomSelection();
+        }
     }
 
     showAuthScreen() {

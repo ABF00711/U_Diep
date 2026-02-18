@@ -34,6 +34,10 @@ app.use(express.json());
 const authRoutes = require('./routes/auth.js');
 app.use('/api/auth', authRoutes);
 
+// Announcement (title + content, shown when user opens game)
+const announcementRoutes = require('./routes/announcement.js');
+app.use('/api/announcement', announcementRoutes);
+
 // Serve static files from the public directory
 const publicPath = path.join(__dirname, '..', 'public');
 app.use(express.static(publicPath));
