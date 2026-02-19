@@ -64,6 +64,21 @@ class GameServer {
 
     // ==================== Socket Handlers ====================
 
+    /**
+     * Returns the socket id of a player with the given userId who is currently in a room (any room).
+     * Used to enforce one tank per account.
+     */
+    getActiveSocketIdForUserId(userId) {
+        if (userId == null) return null;
+        const rooms = this.roomManager.getAllRooms();
+        for (const [, room] of rooms) {
+            for (const [socketId, player] of room.players) {
+                if (player.userId === userId) return socketId;
+            }
+        }
+        return null;
+    }
+
     async handleJoinRoom(socket, data) {
         const { stake, canvasWidth, canvasHeight } = data;
 
@@ -76,6 +91,15 @@ class GameServer {
         // Validate stake
         if (!GameConfig.ECONOMY.ROOM_STAKES.includes(stake)) {
             socket.emit('joinRoomError', { message: 'Invalid stake amount' });
+            return;
+        }
+
+        // One account, one tank: block if this account already has an active tank in another tab/session
+        const activeSocketId = this.getActiveSocketIdForUserId(socket.user.id);
+        if (activeSocketId != null && activeSocketId !== socket.id) {
+            socket.emit('joinRoomError', {
+                message: 'This account is already in a game. Close the other tab or wait until that session ends.'
+            });
             return;
         }
 
