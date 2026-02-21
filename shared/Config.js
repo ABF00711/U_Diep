@@ -14,7 +14,79 @@ const GameConfig = {
         ROOM_STAKES: [1, 5, 10]            // Available room stake amounts
     },
 
-    // Tank Settings
+    // Tank Types - each has distinct features and modifiers
+    TANK_TYPES: {
+        basic: {
+            name: 'Basic',
+            description: 'Balanced tank with standard stats',
+            barrelLength: 25,
+            barrelWidth: 14,
+            size: 30,
+            bodyDamageMultiplier: 1,
+            maxHealthMultiplier: 1,
+            movementSpeedMultiplier: 1,
+            bulletSpeedMultiplier: 1,
+            bulletDamageMultiplier: 1,
+            bulletLifetimeMultiplier: 1,
+            reloadMultiplier: 1,
+            bulletsPerShot: 1,
+            bulletSpreadDeg: 0,
+            color: '#4a90e2'
+        },
+        sniper: {
+            name: 'Sniper',
+            description: 'Long range, high damage. Slow fire, slower movement.',
+            barrelLength: 42,
+            barrelWidth: 10,
+            size: 28,
+            bodyDamageMultiplier: 0.8,
+            maxHealthMultiplier: 1,
+            movementSpeedMultiplier: 0.85,
+            bulletSpeedMultiplier: 1.6,
+            bulletDamageMultiplier: 1.4,
+            bulletLifetimeMultiplier: 2,
+            reloadMultiplier: 1.5,
+            bulletsPerShot: 1,
+            bulletSpreadDeg: 0,
+            color: '#5dade2'
+        },
+        gun: {
+            name: 'Gun',
+            description: 'Fast fire rate, dual bullets. Lower damage per shot.',
+            barrelLength: 18,
+            barrelWidth: 14,
+            size: 28,
+            bodyDamageMultiplier: 0.85,
+            maxHealthMultiplier: 1,
+            movementSpeedMultiplier: 1.05,
+            bulletSpeedMultiplier: 1.2,
+            bulletDamageMultiplier: 0.75,
+            bulletLifetimeMultiplier: 0.85,
+            reloadMultiplier: 0.55,
+            bulletsPerShot: 2,
+            bulletSpreadDeg: 10,
+            color: '#e74c3c'
+        },
+        bumper: {
+            name: 'Bumper',
+            description: 'Melee specialist. High body damage, tankier, faster ramming.',
+            barrelLength: 14,
+            barrelWidth: 10,
+            size: 35,
+            bodyDamageMultiplier: 1.6,
+            maxHealthMultiplier: 1.35,
+            movementSpeedMultiplier: 1.15,
+            bulletSpeedMultiplier: 0.85,
+            bulletDamageMultiplier: 0.65,
+            bulletLifetimeMultiplier: 0.75,
+            reloadMultiplier: 1.3,
+            bulletsPerShot: 1,
+            bulletSpreadDeg: 0,
+            color: '#2ecc71'
+        }
+    },
+
+    // Tank Settings (base values - tank types apply multipliers)
     TANK: {
         DEFAULT_SIZE: 30,
         DEFAULT_BARREL_LENGTH: 25,

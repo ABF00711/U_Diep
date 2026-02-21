@@ -2,13 +2,16 @@
 
 class Tank {
     constructor(x, y, options = {}) {
+        const tankType = options.tankType || 'basic';
+        const typeConfig = (GameConfig.TANK_TYPES && GameConfig.TANK_TYPES[tankType]) || {};
+        this.tankType = tankType;
         this.x = x;
         this.y = y;
         this.angle = options.angle || 0;
-        this.size = options.size || GameConfig.TANK.DEFAULT_SIZE;
-        this.barrelLength = options.barrelLength || GameConfig.TANK.DEFAULT_BARREL_LENGTH;
-        this.barrelWidth = options.barrelWidth || GameConfig.TANK.DEFAULT_BARREL_WIDTH;
-        this.color = options.color || GameConfig.COLORS.PLAYER_TANK;
+        this.size = options.size || typeConfig.size || GameConfig.TANK.DEFAULT_SIZE;
+        this.barrelLength = options.barrelLength || typeConfig.barrelLength || GameConfig.TANK.DEFAULT_BARREL_LENGTH;
+        this.barrelWidth = options.barrelWidth || typeConfig.barrelWidth || GameConfig.TANK.DEFAULT_BARREL_WIDTH;
+        this.color = options.color || typeConfig.color || GameConfig.COLORS.PLAYER_TANK;
         this.health = options.health || GameConfig.TANK.DEFAULT_HEALTH;
         this.maxHealth = options.maxHealth || GameConfig.TANK.DEFAULT_MAX_HEALTH;
         this.level = options.level || 1;

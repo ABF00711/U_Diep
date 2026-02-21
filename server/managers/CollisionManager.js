@@ -4,15 +4,29 @@
 const GameConfig = require('../../shared/Config.js');
 const BOT_CONFIG = GameConfig.BOT;
 
+function getTankSize(player) {
+    const types = GameConfig.TANK_TYPES || {};
+    const cfg = types[player.tankType] || types.basic;
+    return (cfg && cfg.size) || GameConfig.TANK.DEFAULT_SIZE;
+}
+
+function getBodyDamage(player) {
+    const base = GameConfig.TANK.DEFAULT_BODY_DAMAGE + (player.stats.bodyDamage || 0);
+    const types = GameConfig.TANK_TYPES || {};
+    const cfg = types[player.tankType] || types.basic;
+    const mult = (cfg && cfg.bodyDamageMultiplier) || 1;
+    return base * mult;
+}
+
 class CollisionManager {
     /**
      * Check bot-tank collisions
      */
     checkBotTankCollisions(room, playerManager, onPlayerDeath, onBotKilled) {
         const currentTime = Date.now();
-        const tankSize = 30;
         
         room.players.forEach((player) => {
+            const tankSize = getTankSize(player);
             if (player.isDead) return;
             
             room.bots.forEach((bot) => {
@@ -68,8 +82,8 @@ class CollisionManager {
                         }
                     }
                     
-                    // Player damages bot (body damage)
-                    const playerBodyDamage = GameConfig.TANK.DEFAULT_BODY_DAMAGE + (player.stats.bodyDamage || 0);
+                    // Player damages bot (body damage, includes tank type modifier)
+                    const playerBodyDamage = getBodyDamage(player);
                     if (!bot.lastDamageTime[`player_${player.id}`] || 
                         (currentTime - (bot.lastDamageTime[`player_${player.id}`] || 0)) >= bot.damageCooldown) {
                         const oldBotHealth = bot.health;
@@ -115,7 +129,7 @@ class CollisionManager {
                     Math.pow(bullet.x - targetPlayer.x, 2) + 
                     Math.pow(bullet.y - targetPlayer.y, 2)
                 );
-                const tankSize = 30;
+                const tankSize = getTankSize(targetPlayer);
                 
                 if (distance < tankSize + bullet.size) {
                     // Hit! Mark target as hit (prevents hitting same target multiple times in one frame)
@@ -155,7 +169,6 @@ class CollisionManager {
      */
     checkTankTankCollisions(room, playerManager, onPlayerDeath) {
         const currentTime = Date.now();
-        const tankSize = 30;
         const players = Array.from(room.players.values()).filter(p => !p.isDead);
         
         // Check all pairs of players
@@ -163,13 +176,16 @@ class CollisionManager {
             for (let j = i + 1; j < players.length; j++) {
                 const player1 = players[i];
                 const player2 = players[j];
+                const size1 = getTankSize(player1);
+                const size2 = getTankSize(player2);
+                const minDistance = size1 + size2;
                 
                 const distance = Math.sqrt(
                     Math.pow(player2.x - player1.x, 2) + 
                     Math.pow(player2.y - player1.y, 2)
                 );
                 
-                if (distance < tankSize * 2) {
+                if (distance < minDistance) {
                     // Collision detected - apply push-back first
                     const dx = player2.x - player1.x;
                     const dy = player2.y - player1.y;
@@ -177,7 +193,6 @@ class CollisionManager {
                     const normalX = dx / dist;
                     const normalY = dy / dist;
                     
-                    const minDistance = tankSize * 2;
                     const overlap = minDistance - distance;
                     
                     if (overlap > 0) {
@@ -201,15 +216,14 @@ class CollisionManager {
                         const worldWidth = GameConfig.GAME.WORLD_WIDTH;
                         const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
                         
-                        player1.x = Math.max(tankSize, Math.min(worldWidth - tankSize, player1.x));
-                        player1.y = Math.max(tankSize, Math.min(worldHeight - tankSize, player1.y));
-                        player2.x = Math.max(tankSize, Math.min(worldWidth - tankSize, player2.x));
-                        player2.y = Math.max(tankSize, Math.min(worldHeight - tankSize, player2.y));
+                        player1.x = Math.max(size1, Math.min(worldWidth - size1, player1.x));
+                        player1.y = Math.max(size1, Math.min(worldHeight - size1, player1.y));
+                        player2.x = Math.max(size2, Math.min(worldWidth - size2, player2.x));
+                        player2.y = Math.max(size2, Math.min(worldHeight - size2, player2.y));
                     }
                     
-                    // Apply mutual body damage (with cooldown)
-                    // Player1 damages Player2
-                    const bodyDamage1 = GameConfig.TANK.DEFAULT_BODY_DAMAGE + (player1.stats.bodyDamage || 0);
+                    // Apply mutual body damage (with cooldown, includes tank type modifiers)
+                    const bodyDamage1 = getBodyDamage(player1);
                     if (!player1.lastBodyDamageTime || !player1.lastBodyDamageTime[player2.id] || 
                         (currentTime - (player1.lastBodyDamageTime[player2.id] || 0)) >= GameConfig.TANK.BODY_DAMAGE_COOLDOWN) {
                         if (!player1.lastBodyDamageTime) player1.lastBodyDamageTime = {};
@@ -225,8 +239,7 @@ class CollisionManager {
                         }
                     }
                     
-                    // Player2 damages Player1
-                    const bodyDamage2 = GameConfig.TANK.DEFAULT_BODY_DAMAGE + (player2.stats.bodyDamage || 0);
+                    const bodyDamage2 = getBodyDamage(player2);
                     if (!player2.lastBodyDamageTime || !player2.lastBodyDamageTime[player1.id] || 
                         (currentTime - (player2.lastBodyDamageTime[player1.id] || 0)) >= GameConfig.TANK.BODY_DAMAGE_COOLDOWN) {
                         if (!player2.lastBodyDamageTime) player2.lastBodyDamageTime = {};

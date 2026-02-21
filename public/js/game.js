@@ -119,6 +119,20 @@ class Game {
     }
 
     setupUI() {
+        // Tank type selection
+        this.selectedTankType = 'basic';
+        const tankTypeBtns = document.querySelectorAll('.tank-type-btn');
+        const tankTypeDesc = document.getElementById('tankTypeDesc');
+        tankTypeBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                tankTypeBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.selectedTankType = btn.dataset.tank || 'basic';
+                const cfg = GameConfig.TANK_TYPES && GameConfig.TANK_TYPES[this.selectedTankType];
+                if (tankTypeDesc && cfg) tankTypeDesc.textContent = cfg.description || '';
+            });
+        });
+
         // Room selection buttons
         const roomButtons = document.querySelectorAll('.room-btn');
         roomButtons.forEach(btn => {
@@ -378,7 +392,8 @@ class Game {
         const joined = this.networkManager.joinRoom(
             stake,
             'Player',
-            originalBalance
+            originalBalance,
+            this.selectedTankType || 'basic'
         );
         
         if (joined) {
@@ -391,21 +406,24 @@ class Game {
         }
     }
 
-    startGame() {
+    startGame(playerDataFromServer) {
         this.hideRoomSelection();
         
         // Get current wager amount (for reward calculation)
         const currentStake = this.economy.getCurrentWager();
+        const tankType = (playerDataFromServer && playerDataFromServer.tankType) || this.selectedTankType || 'basic';
+        const typeConfig = GameConfig.TANK_TYPES && GameConfig.TANK_TYPES[tankType];
         
         // Create player tank (position will be set by server)
         this.playerTank = new Tank(
             this.canvas.width / 2,
             this.canvas.height / 2,
             {
-                color: GameConfig.COLORS.PLAYER_TANK,
+                color: (typeConfig && typeConfig.color) || GameConfig.COLORS.PLAYER_TANK,
                 isPlayer: true,
                 name: 'Player',
-                stake: currentStake // Store player's stake
+                stake: currentStake,
+                tankType: tankType
             }
         );
     }

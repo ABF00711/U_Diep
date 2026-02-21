@@ -53,9 +53,21 @@
             <div id="roomSelection" class="hidden">
                 <h2>Select Room</h2>
                 <p id="welcomeUser" class="welcome-user"></p>
-                <button class="room-btn" data-stake="1">$1 Room</button>
-                <button class="room-btn" data-stake="5">$5 Room</button>
-                <button class="room-btn" data-stake="10">$10 Room</button>
+                <div class="tank-selection">
+                    <label>Tank Type</label>
+                    <div class="tank-type-btns">
+                        <button type="button" class="tank-type-btn active" data-tank="basic" title="Balanced tank with standard stats">Basic</button>
+                        <button type="button" class="tank-type-btn" data-tank="sniper" title="Long range, high damage. Slow fire.">Sniper</button>
+                        <button type="button" class="tank-type-btn" data-tank="gun" title="Fast fire, dual bullets. Lower damage per shot.">Gun</button>
+                        <button type="button" class="tank-type-btn" data-tank="bumper" title="Melee specialist. High body damage, tankier.">Bumper</button>
+                    </div>
+                    <p id="tankTypeDesc" class="tank-type-desc">Balanced tank with standard stats</p>
+                </div>
+                <div class="room-btns">
+                    <button class="room-btn" data-stake="1">$1 Room</button>
+                    <button class="room-btn" data-stake="5">$5 Room</button>
+                    <button class="room-btn" data-stake="10">$10 Room</button>
+                </div>
                 <button type="button" id="logoutButton" class="logout-btn">Log out</button>
             </div>
             

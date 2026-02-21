@@ -5,29 +5,60 @@ const GameConfig = require('../../shared/Config.js');
 
 class BulletManager {
     /**
-     * Create a bullet from player stats
+     * Get tank type config (default to basic). Case-insensitive lookup.
      */
-    createBullet(player, angle) {
-        const bulletSpeed = GameConfig.BULLET.BASE_SPEED + (player.stats.bulletSpeed * GameConfig.BULLET.SPEED_MULTIPLIER);
-        const bulletDamage = GameConfig.BULLET.BASE_DAMAGE + (player.stats.bulletDamage * GameConfig.BULLET.DAMAGE_MULTIPLIER);
-        const bulletSize = GameConfig.BULLET.BASE_SIZE + (player.stats.bulletSize * GameConfig.BULLET.SIZE_MULTIPLIER);
-        const penetration = GameConfig.BULLET.DEFAULT_PENETRATION + player.stats.bulletPenetration;
+    getTankTypeConfig(tankType) {
+        const types = GameConfig.TANK_TYPES || {};
+        if (!tankType || typeof tankType !== 'string') return types.basic || {};
+        const key = tankType.toLowerCase();
+        return types[key] || types.basic || {};
+    }
 
-        return {
-            id: `bullet_${player.id}_${Date.now()}_${Math.random()}`,
-            x: player.x + Math.cos(angle) * 35, // Spawn in front of tank
-            y: player.y + Math.sin(angle) * 35,
-            angle: angle,
-            speed: bulletSpeed,
-            damage: bulletDamage,
-            size: bulletSize,
-            lifetime: GameConfig.BULLET.DEFAULT_LIFETIME,
-            age: 0,
-            penetration: penetration,
-            hitTargets: new Set(), // Track targets hit this frame (for multi-hit penetration)
-            ownerId: player.id,
-            createdAt: Date.now()
-        };
+    /**
+     * Create bullet(s) from player stats. Returns array (Gun fires 2, others fire 1).
+     */
+    createBullets(player, angle) {
+        const tankType = (player.tankType || 'basic').toString().toLowerCase();
+        const typeConfig = this.getTankTypeConfig(tankType);
+        const spawnDist = (typeConfig.size || 30) + (typeConfig.barrelLength || 25);
+
+        let baseSpeed = GameConfig.BULLET.BASE_SPEED + (player.stats.bulletSpeed * GameConfig.BULLET.SPEED_MULTIPLIER);
+        let baseDamage = GameConfig.BULLET.BASE_DAMAGE + (player.stats.bulletDamage * GameConfig.BULLET.DAMAGE_MULTIPLIER);
+        const bulletSize = GameConfig.BULLET.BASE_SIZE + (player.stats.bulletSize * GameConfig.BULLET.SIZE_MULTIPLIER);
+        let penetration = GameConfig.BULLET.DEFAULT_PENETRATION + (player.stats.bulletPenetration || 0);
+        let lifetime = GameConfig.BULLET.DEFAULT_LIFETIME;
+
+        // Apply tank type multipliers
+        baseSpeed *= typeConfig.bulletSpeedMultiplier || 1;
+        baseDamage *= typeConfig.bulletDamageMultiplier || 1;
+        lifetime *= typeConfig.bulletLifetimeMultiplier || 1;
+
+        // Gun fires 2 bullets; others use config or default to 1
+        const bulletsPerShot = (tankType === 'gun' ? 2 : (typeConfig.bulletsPerShot || 1));
+        const bulletSpreadDeg = (typeConfig.bulletSpreadDeg || 0) * (Math.PI / 180);
+        const bullets = [];
+
+        for (let i = 0; i < bulletsPerShot; i++) {
+            const spreadOffset = bulletsPerShot === 1 ? 0 : bulletSpreadDeg * (i - 0.5) * 2;
+            const bulletAngle = angle + spreadOffset;
+
+            bullets.push({
+                id: `bullet_${player.id}_${Date.now()}_${Math.random()}_${i}`,
+                x: player.x + Math.cos(bulletAngle) * spawnDist,
+                y: player.y + Math.sin(bulletAngle) * spawnDist,
+                angle: bulletAngle,
+                speed: baseSpeed,
+                damage: baseDamage,
+                size: bulletSize,
+                lifetime: lifetime,
+                age: 0,
+                penetration: penetration,
+                hitTargets: new Set(),
+                ownerId: player.id,
+                createdAt: Date.now()
+            });
+        }
+        return bullets;
     }
 
     /**

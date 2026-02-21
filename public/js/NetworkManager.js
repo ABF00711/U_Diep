@@ -167,7 +167,7 @@ class NetworkManager {
         this.socket.emit('requestRoomCounts');
     }
 
-    joinRoom(stake, playerName, balance) {
+    joinRoom(stake, playerName, balance, tankType) {
         if (!this.connected) {
             console.error('Not connected to server');
             return false;
@@ -186,7 +186,8 @@ class NetworkManager {
             playerName: playerName || 'Player',
             balance: balance,
             canvasWidth: canvasWidth,
-            canvasHeight: canvasHeight
+            canvasHeight: canvasHeight,
+            tankType: tankType || 'basic'
         });
 
         return true;
@@ -267,7 +268,7 @@ class NetworkManager {
 
         // Start game if not already started
         if (this.game.state !== 'playing') {
-            this.game.startGame();
+            this.game.startGame(data.playerData);
         }
 
         // Update local player tank with server data
@@ -296,6 +297,9 @@ class NetworkManager {
                 };
             }
             this.game.playerTank.statPoints = data.playerData.statPoints || 0;
+            if (data.playerData.tankType) {
+                this.game.playerTank.tankType = data.playerData.tankType;
+            }
         }
     }
 
@@ -538,14 +542,17 @@ class NetworkManager {
         // Check if already exists
         if (this.serverPlayers.has(playerId)) return;
 
+        const tankType = playerData.tankType || 'basic';
+        const typeConfig = GameConfig.TANK_TYPES && GameConfig.TANK_TYPES[tankType];
         const tank = new Tank(
             playerData.x,
             playerData.y,
             {
-                color: GameConfig.COLORS.ENEMY_TANK,
+                color: (typeConfig && typeConfig.color) || GameConfig.COLORS.ENEMY_TANK,
                 isPlayer: false,
                 name: playerData.name || `Player${playerId.slice(0, 6)}`,
-                stake: this.roomStake
+                stake: this.roomStake,
+                tankType: tankType
             }
         );
 

@@ -40,7 +40,10 @@ class PlayerManager {
         player.stats = { ...this.getDefaultStats() };
         player.statPoints = Math.max(0, newLevel - 1);
         player.pendingStatAllocation = player.statPoints > 0;
-        player.maxHealth = GameConfig.TANK.DEFAULT_MAX_HEALTH;
+        const types = GameConfig.TANK_TYPES || {};
+        const typeConfig = types[player.tankType] || types.basic || {};
+        const baseMax = GameConfig.TANK.DEFAULT_MAX_HEALTH * (typeConfig.maxHealthMultiplier || 1);
+        player.maxHealth = baseMax;
         player.health = player.maxHealth;
         this.applyStatChanges(player);
     }
@@ -49,8 +52,12 @@ class PlayerManager {
      * Create a new player
      * @param {number} [userId] - Database user id (for balance persistence)
      * @param {object} [gameStats] - { level, xp, xpToNextLevel, stats } from DB (persisted progress)
+     * @param {string} [tankType] - Tank type (basic, sniper, gun, bumper)
      */
-    createPlayer(socketId, playerName, balance, x, y, canvasWidth, canvasHeight, userId = null, gameStats = null) {
+    createPlayer(socketId, playerName, balance, x, y, canvasWidth, canvasHeight, userId = null, gameStats = null, tankType = 'basic') {
+        const types = GameConfig.TANK_TYPES || {};
+        const typeConfig = types[tankType] || types.basic || {};
+        const maxHealthMult = typeConfig.maxHealthMultiplier || 1;
         const defaultStats = this.getDefaultStats();
         const stats = gameStats && gameStats.stats
             ? { ...defaultStats, ...gameStats.stats }
@@ -61,9 +68,11 @@ class PlayerManager {
         const totalAllocated = Object.values(stats).reduce((s, v) => s + (Number(v) || 0), 0);
         const statPoints = Math.max(0, (level - 1) - totalAllocated);
 
+        const baseMaxHealth = GameConfig.TANK.DEFAULT_MAX_HEALTH * maxHealthMult;
         const player = {
             id: socketId,
             userId: userId,
+            tankType: tankType,
             name: playerName || `Player${socketId.slice(0, 6)}`,
             socket: null,
             roomStake: null,
@@ -75,8 +84,8 @@ class PlayerManager {
             canvasHeight: canvasHeight,
             angle: 0,
             level,
-            health: GameConfig.TANK.DEFAULT_HEALTH,
-            maxHealth: GameConfig.TANK.DEFAULT_MAX_HEALTH,
+            health: baseMaxHealth,
+            maxHealth: baseMaxHealth,
             xp,
             xpToNextLevel,
             lastHealthUpdate: Date.now(),
@@ -88,7 +97,7 @@ class PlayerManager {
             isDead: false,
             balance: balance || GameConfig.ECONOMY.INITIAL_BALANCE
         };
-        this.applyStatChanges(player, 'maxHealth');
+        this.applyStatChanges(player, 'maxHealth', tankType);
         if (player.health > player.maxHealth) player.health = player.maxHealth;
 
         this.players.set(socketId, player);
@@ -128,13 +137,16 @@ class PlayerManager {
      * Apply stat changes to a player (only for stats that affect derived values on the server).
      * @param {object} player - Player object
      * @param {string} [statName] - Which stat was just allocated; omit to recompute from current stats (e.g. on rejoin)
+     * @param {string} [tankType] - Tank type for maxHealth multiplier
      */
-    applyStatChanges(player, statName) {
+    applyStatChanges(player, statName, tankType) {
         if (statName === undefined || statName === null || statName === 'maxHealth') {
-            // Flat +5 HP per maxHealth stat point (server-authoritative; client receives via gameState)
-            const base = GameConfig.TANK.DEFAULT_MAX_HEALTH;
+            const types = GameConfig.TANK_TYPES || {};
+            const typeConfig = types[tankType || player.tankType] || types.basic || {};
+            const maxHealthMult = typeConfig.maxHealthMultiplier || 1;
+            const base = GameConfig.TANK.DEFAULT_MAX_HEALTH * maxHealthMult;
             const points = player.stats.maxHealth || 0;
-            const currentHealthPercentage = player.health / player.maxHealth;
+            const currentHealthPercentage = player.maxHealth > 0 ? player.health / player.maxHealth : 1;
             player.maxHealth = base + (points * 50);
             player.health = player.maxHealth * currentHealthPercentage;
         }

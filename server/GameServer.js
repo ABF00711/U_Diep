@@ -79,8 +79,23 @@ class GameServer {
         return null;
     }
 
+    getTankTypeConfig(tankType) {
+        const types = GameConfig.TANK_TYPES || {};
+        return types[tankType] || types.basic || {};
+    }
+
+    getTankSize(playerOrType) {
+        const type = typeof playerOrType === 'object' ? (playerOrType.tankType || 'basic') : playerOrType;
+        return (this.getTankTypeConfig(type).size || GameConfig.TANK.DEFAULT_SIZE);
+    }
+
     async handleJoinRoom(socket, data) {
-        const { stake, canvasWidth, canvasHeight } = data;
+        const { stake, canvasWidth, canvasHeight, tankType: requestedTankType } = data;
+        const rawType = (requestedTankType && typeof requestedTankType === 'string')
+            ? requestedTankType.toLowerCase() : 'basic';
+        const tankType = (GameConfig.TANK_TYPES && GameConfig.TANK_TYPES[rawType])
+            ? rawType
+            : 'basic';
 
         // Require authenticated user (account system)
         if (!socket.user) {
@@ -125,10 +140,10 @@ class GameServer {
         // Get or create room
         const room = this.roomManager.getOrCreateRoom(stake);
 
-        // Calculate spawn position in world coordinates
+        // Calculate spawn position in world coordinates (use tank size for spawn bounds)
         const worldWidth = GameConfig.GAME.WORLD_WIDTH;
         const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
-        const tankSize = 30;
+        const tankSize = this.getTankSize(tankType);
         const margin = 100;
         const minX = margin + tankSize;
         const maxX = Math.max(worldWidth - margin - tankSize, minX + 100);
@@ -157,7 +172,8 @@ class GameServer {
         let player = this.playerManager.getPlayer(socket.id);
         
         if (player && !player.roomStake) {
-            // Rejoin: apply persisted level, xp, stats from DB
+            // Rejoin: apply persisted level, xp, stats from DB; ensure tankType is set
+            player.tankType = tankType;
             if (player.socket) {
                 GameConfig.ECONOMY.ROOM_STAKES.forEach(possibleStake => {
                     player.socket.leave(`room_${possibleStake}`);
@@ -199,7 +215,8 @@ class GameServer {
                 spawnWidth,
                 spawnHeight,
                 socket.user.id,
-                gameStats
+                gameStats,
+                tankType
             );
         }
 
@@ -224,9 +241,10 @@ class GameServer {
             }
         }
         
-        // Set socket reference
+        // Set socket reference and tank type
         player.socket = socket;
         player.roomStake = stake;
+        player.tankType = tankType;
 
         // Add player to room
         if (!room.players.has(socket.id)) {
@@ -250,7 +268,8 @@ class GameServer {
                 xp: player.xp,
                 xpToNextLevel: player.xpToNextLevel,
                 stats: player.stats,
-                statPoints: player.statPoints
+                statPoints: player.statPoints,
+                tankType: player.tankType || 'basic'
             }
         });
 
@@ -266,7 +285,8 @@ class GameServer {
                     angle: p.angle,
                     level: p.level,
                     health: p.health,
-                    maxHealth: p.maxHealth
+                    maxHealth: p.maxHealth,
+                    tankType: p.tankType || 'basic'
                 }
             }));
         
@@ -284,7 +304,8 @@ class GameServer {
                 angle: player.angle,
                 level: player.level,
                 health: player.health,
-                maxHealth: player.maxHealth
+                maxHealth: player.maxHealth,
+                tankType: player.tankType || 'basic'
             }
         });
 
@@ -335,8 +356,11 @@ class GameServer {
             return;
         }
 
+        const typeConfig = this.getTankTypeConfig(player.tankType);
+        const moveMult = typeConfig.movementSpeedMultiplier || 1;
+
         // Update player position (movement)
-        const moveSpeed = GameConfig.TANK.DEFAULT_SPEED + (player.stats.movementSpeed * GameConfig.TANK.MOVEMENT_SPEED_MULTIPLIER);
+        const moveSpeed = (GameConfig.TANK.DEFAULT_SPEED + (player.stats.movementSpeed * GameConfig.TANK.MOVEMENT_SPEED_MULTIPLIER)) * moveMult;
         const moveSpeedPerFrame = moveSpeed * (1/60); // Per frame at 60fps
         
         let moveX = 0;
@@ -360,10 +384,10 @@ class GameServer {
         // Clamp to canvas bounds
         const canvasWidth = player.canvasWidth || 1920;
         const canvasHeight = player.canvasHeight || 1080;
-        // Clamp player to world bounds
+        // Clamp player to world bounds (use tank-type-specific size)
         const worldWidth = GameConfig.GAME.WORLD_WIDTH;
         const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
-        const tankSize = 30;
+        const tankSize = this.getTankSize(player);
         player.x = Math.max(tankSize, Math.min(worldWidth - tankSize, player.x));
         player.y = Math.max(tankSize, Math.min(worldHeight - tankSize, player.y));
         
@@ -374,33 +398,30 @@ class GameServer {
         
         // Handle shooting
         if (isShooting) {
-            // Reload stat reduces reload time: each point reduces by RELOAD_MULTIPLIER ms
-            // Formula: BASE_RELOAD_TIME - (reload_stat * RELOAD_MULTIPLIER)
-            // Example with 7 points: 1000ms - (7 * 100) = 300ms minimum reload time
             const reloadReduction = (player.stats.reload || 0) * GameConfig.TANK.RELOAD_MULTIPLIER;
-            const reloadTime = Math.max(100, GameConfig.TANK.BASE_RELOAD_TIME - reloadReduction);
+            let reloadTime = Math.max(100, GameConfig.TANK.BASE_RELOAD_TIME - reloadReduction);
+            reloadTime *= (typeConfig.reloadMultiplier || 1);
             const currentTime = Date.now();
             
             if (currentTime - player.lastShotTime >= reloadTime) {
                 player.lastShotTime = currentTime;
                 
-                // Create bullet
-                const bullet = this.bulletManager.createBullet(player, player.angle);
-                room.bullets.set(bullet.id, bullet);
-                
-                // Broadcast bullet to room
-                this.io.to(`room_${player.roomStake}`).emit('bulletFired', {
-                    bulletId: bullet.id,
-                    ownerId: bullet.ownerId,
-                    x: bullet.x,
-                    y: bullet.y,
-                    angle: bullet.angle,
-                    speed: bullet.speed,
-                    damage: bullet.damage,
-                    size: bullet.size,
-                    lifetime: bullet.lifetime,
-                    penetration: bullet.penetration
-                });
+                const bullets = this.bulletManager.createBullets(player, player.angle);
+                for (const bullet of bullets) {
+                    room.bullets.set(bullet.id, bullet);
+                    this.io.to(`room_${player.roomStake}`).emit('bulletFired', {
+                        bulletId: bullet.id,
+                        ownerId: bullet.ownerId,
+                        x: bullet.x,
+                        y: bullet.y,
+                        angle: bullet.angle,
+                        speed: bullet.speed,
+                        damage: bullet.damage,
+                        size: bullet.size,
+                        lifetime: bullet.lifetime,
+                        penetration: bullet.penetration
+                    });
+                }
             }
         }
     }
@@ -683,10 +704,10 @@ class GameServer {
                 player.x += player.vx * deltaTime;
                 player.y += player.vy * deltaTime;
                 
-                // Clamp positions to world bounds
+                // Clamp positions to world bounds (use tank-type-specific size)
                 const worldWidth = GameConfig.GAME.WORLD_WIDTH;
                 const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
-                const tankSize = 30;
+                const tankSize = this.getTankSize(player);
                 player.x = Math.max(tankSize, Math.min(worldWidth - tankSize, player.x));
                 player.y = Math.max(tankSize, Math.min(worldHeight - tankSize, player.y));
             });
@@ -747,7 +768,8 @@ class GameServer {
                     xp: p.xp,
                     xpToNextLevel: p.xpToNextLevel,
                     statPoints: p.statPoints,
-                    pendingStatAllocation: p.pendingStatAllocation
+                    pendingStatAllocation: p.pendingStatAllocation,
+                    tankType: p.tankType || 'basic'
                 }));
 
             // Get bot states
