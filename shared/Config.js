@@ -131,7 +131,7 @@ const GameConfig = {
         BASE_SIZE: 6,
         DEFAULT_DAMAGE: 10,
         BASE_DAMAGE: 10,
-        BASE_SPEED: 500,
+        BASE_SPEED: 300,
         SPEED_MULTIPLIER: 50,              // Per stat point
         DAMAGE_MULTIPLIER: 2,              // Per stat point
         SIZE_MULTIPLIER: 0.5,              // Per stat point
