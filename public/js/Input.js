@@ -44,6 +44,13 @@ class Input {
         window.addEventListener('contextmenu', (e) => {
             e.preventDefault();
         });
+
+        // Prevent Ctrl+Plus / Ctrl+Minus (browser zoom) for fair play
+        window.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && (e.key === '+' || e.key === '-' || e.key === '=')) {
+                e.preventDefault();
+            }
+        });
     }
 
     // Check if key is pressed
