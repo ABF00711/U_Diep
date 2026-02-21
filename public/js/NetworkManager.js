@@ -109,6 +109,25 @@ class NetworkManager {
             this.handlePlayerLeft(data);
         });
 
+        this.socket.on('playerTankChanged', (data) => {
+            const tank = this.serverPlayers.get(data.playerId);
+            if (tank) {
+                tank.tankType = data.tankType || 'basic';
+            }
+        });
+
+        this.socket.on('tankChanged', (data) => {
+            if (this.game.playerTank && data.playerId === this.playerId) {
+                this.game.playerTank.tankType = data.tankType || 'basic';
+                if (this.game.updateHudTankSelection) this.game.updateHudTankSelection();
+            }
+        });
+
+        this.socket.on('changeTankError', (data) => {
+            const msg = data.message || 'Cannot change tank';
+            if (this.game.showMessage) this.game.showMessage(msg, 2000);
+        });
+
         // Game state events
         this.socket.on('gameState', (data) => {
             this.handleGameState(data);
@@ -167,14 +186,13 @@ class NetworkManager {
         this.socket.emit('requestRoomCounts');
     }
 
-    joinRoom(stake, playerName, balance, tankType) {
+    joinRoom(stake, playerName, balance) {
         if (!this.connected) {
             console.error('Not connected to server');
             return false;
         }
 
         // Get canvas dimensions to send to server for proper spawning
-        // Ensure canvas is resized before getting dimensions
         if (this.game.canvas.width === 0 || this.game.canvas.height === 0) {
             this.game.resizeCanvas();
         }
@@ -186,11 +204,17 @@ class NetworkManager {
             playerName: playerName || 'Player',
             balance: balance,
             canvasWidth: canvasWidth,
-            canvasHeight: canvasHeight,
-            tankType: tankType || 'basic'
+            canvasHeight: canvasHeight
         });
 
         return true;
+    }
+
+    changeTank(tankType) {
+        if (!this.connected || !this.playerId) return;
+        const valid = ['basic', 'sniper', 'gun', 'heavy'].includes(tankType);
+        if (!valid) return;
+        this.socket.emit('changeTank', { tankType });
     }
 
     sendPlayerInput(keys, mouseX, mouseY, shooting) {
@@ -300,6 +324,7 @@ class NetworkManager {
             if (data.playerData.tankType) {
                 this.game.playerTank.tankType = data.playerData.tankType;
             }
+            if (this.game.updateHudTankSelection) this.game.updateHudTankSelection();
         }
     }
 
@@ -400,6 +425,10 @@ class NetworkManager {
                     if (playerData.health > 0 && this.game.playerTank.isDead) {
                         this.game.playerTank.isDead = false;
                     }
+                    if (playerData.tankType) {
+                        this.game.playerTank.tankType = playerData.tankType;
+                    }
+                    if (this.game.updateHudTankSelection) this.game.updateHudTankSelection();
                 }
             } else {
                 // Update enemy player
@@ -542,7 +571,7 @@ class NetworkManager {
         // Check if already exists
         if (this.serverPlayers.has(playerId)) return;
 
-        const tankType = playerData.tankType || 'basic';
+        const tankType = (playerData.tankType || 'basic').toLowerCase();
         const typeConfig = GameConfig.TANK_TYPES && GameConfig.TANK_TYPES[tankType];
         const tank = new Tank(
             playerData.x,

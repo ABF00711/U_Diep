@@ -194,46 +194,39 @@ body {
     display: none;
 }
 
-.tank-selection {
-    margin-bottom: 20px;
+#hudTankSelection {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #333;
 }
-.tank-selection label {
+.hud-tank-label {
     display: block;
-    font-size: 12px;
+    font-size: 11px;
     color: #888;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
 }
-.tank-type-btns {
+.hud-tank-btns {
     display: flex;
-    gap: 8px;
-    justify-content: center;
+    gap: 6px;
     flex-wrap: wrap;
 }
-.tank-type-btn {
-    padding: 8px 14px;
+.hud-tank-btn {
+    padding: 4px 10px;
     background: #2a2a4a;
     color: #aaa;
-    border: 2px solid #444;
-    border-radius: 8px;
-    font-size: 14px;
+    border: 1px solid #444;
+    border-radius: 4px;
+    font-size: 12px;
     cursor: pointer;
 }
-.tank-type-btn:hover {
+.hud-tank-btn:hover {
     border-color: #4a90e2;
     color: #4a90e2;
 }
-.tank-type-btn.active {
+.hud-tank-btn.active {
     background: #4a90e2;
     color: #fff;
     border-color: #4a90e2;
-}
-.tank-type-desc {
-    font-size: 11px;
-    color: #666;
-    margin-top: 6px;
-}
-.room-btns {
-    margin-top: 10px;
 }
 .room-btn {
     display: block;

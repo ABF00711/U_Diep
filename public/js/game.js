@@ -74,9 +74,10 @@ class Game {
      * Convert world coordinates to screen coordinates (for rendering)
      */
     worldToScreen(worldX, worldY) {
+        const v = this.camera.viewScale || 1;
         return {
-            x: worldX - this.camera.x + this.camera.width / 2,
-            y: worldY - this.camera.y + this.camera.height / 2
+            x: (worldX - this.camera.x) / v + this.camera.width / 2,
+            y: (worldY - this.camera.y) / v + this.camera.height / 2
         };
     }
 
@@ -84,9 +85,10 @@ class Game {
      * Convert screen coordinates to world coordinates (for input)
      */
     screenToWorld(screenX, screenY) {
+        const v = this.camera.viewScale || 1;
         return {
-            x: screenX + this.camera.x - this.camera.width / 2,
-            y: screenY + this.camera.y - this.camera.height / 2
+            x: (screenX - this.camera.width / 2) * v + this.camera.x,
+            y: (screenY - this.camera.height / 2) * v + this.camera.y
         };
     }
 
@@ -108,31 +110,30 @@ class Game {
         this.camera.x += (targetX - this.camera.x) * smoothFactor;
         this.camera.y += (targetY - this.camera.y) * smoothFactor;
         
-        // Clamp camera to world boundaries
+        // View range from tank type (Sniper sees more)
+        const viewMult = this.getViewRangeMultiplier();
+        this.camera.viewScale = viewMult;
+
+        // Clamp camera to world boundaries (use scaled viewport for bounds)
         const worldWidth = GameConfig.GAME.WORLD_WIDTH;
         const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
-        const halfViewportWidth = this.camera.width / 2;
-        const halfViewportHeight = this.camera.height / 2;
+        const halfViewportWidth = (this.camera.width * viewMult) / 2;
+        const halfViewportHeight = (this.camera.height * viewMult) / 2;
         
         this.camera.x = Math.max(halfViewportWidth, Math.min(worldWidth - halfViewportWidth, this.camera.x));
         this.camera.y = Math.max(halfViewportHeight, Math.min(worldHeight - halfViewportHeight, this.camera.y));
     }
 
-    setupUI() {
-        // Tank type selection
-        this.selectedTankType = 'basic';
-        const tankTypeBtns = document.querySelectorAll('.tank-type-btn');
-        const tankTypeDesc = document.getElementById('tankTypeDesc');
-        tankTypeBtns.forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                tankTypeBtns.forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                this.selectedTankType = btn.dataset.tank || 'basic';
-                const cfg = GameConfig.TANK_TYPES && GameConfig.TANK_TYPES[this.selectedTankType];
-                if (tankTypeDesc && cfg) tankTypeDesc.textContent = cfg.description || '';
-            });
-        });
+    getViewRangeMultiplier() {
+        if (!this.playerTank) return 1;
+        const types = GameConfig.TANK_TYPES || {};
+        const cfg = types[this.playerTank.tankType || 'basic'] || types.basic || {};
+        const tier = GameConfig.getTankTier ? GameConfig.getTankTier(this.playerTank.level || 1) : 0;
+        const v = cfg.viewRangeMultiplier;
+        return typeof v === 'function' ? v(tier) : (v ?? 1);
+    }
 
+    setupUI() {
         // Room selection buttons
         const roomButtons = document.querySelectorAll('.room-btn');
         roomButtons.forEach(btn => {
@@ -392,8 +393,7 @@ class Game {
         const joined = this.networkManager.joinRoom(
             stake,
             'Player',
-            originalBalance,
-            this.selectedTankType || 'basic'
+            originalBalance
         );
         
         if (joined) {
@@ -411,21 +411,61 @@ class Game {
         
         // Get current wager amount (for reward calculation)
         const currentStake = this.economy.getCurrentWager();
-        const tankType = (playerDataFromServer && playerDataFromServer.tankType) || this.selectedTankType || 'basic';
-        const typeConfig = GameConfig.TANK_TYPES && GameConfig.TANK_TYPES[tankType];
+        const tankType = (playerDataFromServer && playerDataFromServer.tankType) || 'basic';
+        const level = (playerDataFromServer && playerDataFromServer.level) || 1;
         
-        // Create player tank (position will be set by server)
+        // Create player tank (position will be set by server) - always start with Basic
         this.playerTank = new Tank(
             this.canvas.width / 2,
             this.canvas.height / 2,
             {
-                color: (typeConfig && typeConfig.color) || GameConfig.COLORS.PLAYER_TANK,
+                color: GameConfig.COLORS.PLAYER_TANK,
                 isPlayer: true,
                 name: 'Player',
                 stake: currentStake,
-                tankType: tankType
+                tankType: tankType,
+                level: level
             }
         );
+        this.setupHudTankSelection();
+    }
+
+    setupHudTankSelection() {
+        const container = document.getElementById('hudTankSelection');
+        const btns = document.querySelectorAll('.hud-tank-btn');
+        if (!container || !btns.length) return;
+        const updateVisibility = () => {
+            const level = this.playerTank ? (this.playerTank.level || 1) : 0;
+            if (level >= 5) {
+                container.classList.remove('hidden');
+            } else {
+                container.classList.add('hidden');
+            }
+        };
+        const updateActive = (tankType) => {
+            btns.forEach(b => {
+                b.classList.toggle('active', (b.dataset.tank || 'basic') === tankType);
+            });
+        };
+        updateVisibility();
+        btns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tank = btn.dataset.tank || 'basic';
+                const level = this.playerTank ? (this.playerTank.level || 1) : 0;
+                if (level < 5) return;
+                this.networkManager.changeTank(tank);
+                updateActive(tank);
+            });
+        });
+        this._updateHudTankVisibility = updateVisibility;
+        this._updateHudTankActive = updateActive;
+    }
+
+    updateHudTankSelection() {
+        if (this._updateHudTankVisibility) this._updateHudTankVisibility();
+        if (this._updateHudTankActive && this.playerTank) {
+            this._updateHudTankActive(this.playerTank.tankType || 'basic');
+        }
     }
 
     loadBotSprites() {
@@ -712,9 +752,12 @@ class Game {
         this.drawGrid();
 
         if (this.state === 'playing') {
-            // Apply camera transform for all world-space rendering
+            // Apply camera transform (view scale: Sniper zooms out to see more)
             this.ctx.save();
-            this.ctx.translate(-this.camera.x + this.camera.width / 2, -this.camera.y + this.camera.height / 2);
+            const v = this.camera.viewScale || 1;
+            this.ctx.translate(this.camera.width / 2, this.camera.height / 2);
+            this.ctx.scale(1 / v, 1 / v);
+            this.ctx.translate(-this.camera.x, -this.camera.y);
             
             // Draw bots
             this.bots.forEach(bot => {

@@ -3,43 +3,56 @@
 
 const GameConfig = require('../../shared/Config.js');
 
+function getTankTier(level) {
+    return GameConfig.getTankTier ? GameConfig.getTankTier(level) : 0;
+}
+
+function getResolvedConfig(tankType, level) {
+    const types = GameConfig.TANK_TYPES || {};
+    const cfg = types[tankType || 'basic'] || types.basic || {};
+    const tier = level != null ? getTankTier(level) : 0;
+    const resolve = (v) => typeof v === 'function' ? v(tier) : (v ?? 1);
+    return {
+        size: cfg.size ?? 30,
+        barrelLength: cfg.barrelLength ?? 25,
+        bulletSpeedMultiplier: resolve(cfg.bulletSpeedMultiplier),
+        bulletDamageMultiplier: resolve(cfg.bulletDamageMultiplier),
+        bulletLifetimeMultiplier: resolve(cfg.bulletLifetimeMultiplier),
+        bulletSizeMultiplier: resolve(cfg.bulletSizeMultiplier),
+        penetrationMultiplier: resolve(cfg.penetrationMultiplier),
+        cannonsCount: typeof cfg.cannonsCount === 'function' ? cfg.cannonsCount(tier) : (cfg.cannonsCount ?? 1)
+    };
+}
+
 class BulletManager {
     /**
-     * Get tank type config (default to basic). Case-insensitive lookup.
-     */
-    getTankTypeConfig(tankType) {
-        const types = GameConfig.TANK_TYPES || {};
-        if (!tankType || typeof tankType !== 'string') return types.basic || {};
-        const key = tankType.toLowerCase();
-        return types[key] || types.basic || {};
-    }
-
-    /**
-     * Create bullet(s) from player stats. Returns array (Gun fires 2, others fire 1).
+     * Create bullet(s) from player stats. Gun has multiple cannons by level tier.
      */
     createBullets(player, angle) {
         const tankType = (player.tankType || 'basic').toString().toLowerCase();
-        const typeConfig = this.getTankTypeConfig(tankType);
-        const spawnDist = (typeConfig.size || 30) + (typeConfig.barrelLength || 25);
+        const level = player.level || 1;
+        const cfg = getResolvedConfig(tankType, level);
+        const spawnDist = (cfg.size || 30) + (cfg.barrelLength || 25);
 
-        let baseSpeed = GameConfig.BULLET.BASE_SPEED + (player.stats.bulletSpeed * GameConfig.BULLET.SPEED_MULTIPLIER);
-        let baseDamage = GameConfig.BULLET.BASE_DAMAGE + (player.stats.bulletDamage * GameConfig.BULLET.DAMAGE_MULTIPLIER);
-        const bulletSize = GameConfig.BULLET.BASE_SIZE + (player.stats.bulletSize * GameConfig.BULLET.SIZE_MULTIPLIER);
+        let baseSpeed = GameConfig.BULLET.BASE_SPEED + ((player.stats.bulletSpeed || 0) * GameConfig.BULLET.SPEED_MULTIPLIER);
+        let baseDamage = GameConfig.BULLET.BASE_DAMAGE + ((player.stats.bulletDamage || 0) * GameConfig.BULLET.DAMAGE_MULTIPLIER);
+        let bulletSize = GameConfig.BULLET.BASE_SIZE + ((player.stats.bulletSize || 0) * GameConfig.BULLET.SIZE_MULTIPLIER);
         let penetration = GameConfig.BULLET.DEFAULT_PENETRATION + (player.stats.bulletPenetration || 0);
         let lifetime = GameConfig.BULLET.DEFAULT_LIFETIME;
 
-        // Apply tank type multipliers
-        baseSpeed *= typeConfig.bulletSpeedMultiplier || 1;
-        baseDamage *= typeConfig.bulletDamageMultiplier || 1;
-        lifetime *= typeConfig.bulletLifetimeMultiplier || 1;
+        baseSpeed *= cfg.bulletSpeedMultiplier || 1;
+        baseDamage *= cfg.bulletDamageMultiplier || 1;
+        bulletSize *= cfg.bulletSizeMultiplier || 1;
+        penetration = Math.max(0, Math.floor(penetration * (cfg.penetrationMultiplier || 1)));
+        lifetime *= cfg.bulletLifetimeMultiplier || 1;
 
-        // Gun fires 2 bullets; others use config or default to 1
-        const bulletsPerShot = (tankType === 'gun' ? 2 : (typeConfig.bulletsPerShot || 1));
-        const bulletSpreadDeg = (typeConfig.bulletSpreadDeg || 0) * (Math.PI / 180);
+        const bulletsPerShot = cfg.cannonsCount || 1;
+        // Gun: bullets in a forward cone (~50° total spread)
+        const spreadRad = bulletsPerShot > 1 ? (50 * (Math.PI / 180) / Math.max(1, bulletsPerShot - 1)) : 0;
         const bullets = [];
 
         for (let i = 0; i < bulletsPerShot; i++) {
-            const spreadOffset = bulletsPerShot === 1 ? 0 : bulletSpreadDeg * (i - 0.5) * 2;
+            const spreadOffset = bulletsPerShot === 1 ? 0 : (i - (bulletsPerShot - 1) / 2) * spreadRad;
             const bulletAngle = angle + spreadOffset;
 
             bullets.push({

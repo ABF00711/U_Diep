@@ -4,17 +4,23 @@
 const GameConfig = require('../../shared/Config.js');
 const BOT_CONFIG = GameConfig.BOT;
 
+function getTankTier(level) {
+    return GameConfig.getTankTier ? GameConfig.getTankTier(level) : 0;
+}
+
 function getTankSize(player) {
     const types = GameConfig.TANK_TYPES || {};
-    const cfg = types[player.tankType] || types.basic;
-    return (cfg && cfg.size) || GameConfig.TANK.DEFAULT_SIZE;
+    const cfg = types[player.tankType || 'basic'] || types.basic || {};
+    return cfg.size ?? GameConfig.TANK.DEFAULT_SIZE;
 }
 
 function getBodyDamage(player) {
     const base = GameConfig.TANK.DEFAULT_BODY_DAMAGE + (player.stats.bodyDamage || 0);
     const types = GameConfig.TANK_TYPES || {};
-    const cfg = types[player.tankType] || types.basic;
-    const mult = (cfg && cfg.bodyDamageMultiplier) || 1;
+    const cfg = types[player.tankType || 'basic'] || types.basic || {};
+    const mult = typeof cfg.bodyDamageMultiplier === 'function'
+        ? cfg.bodyDamageMultiplier(getTankTier(player.level || 1))
+        : (cfg.bodyDamageMultiplier ?? 1);
     return base * mult;
 }
 

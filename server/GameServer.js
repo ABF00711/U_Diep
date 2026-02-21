@@ -55,6 +55,10 @@ class GameServer {
                 this.handlePlayerDamage(socket, data);
             });
 
+            socket.on('changeTank', (data) => {
+                this.handleChangeTank(socket, data);
+            });
+
             // Request room player counts
             socket.on('requestRoomCounts', () => {
                 this.handleRequestRoomCounts(socket);
@@ -79,23 +83,67 @@ class GameServer {
         return null;
     }
 
-    getTankTypeConfig(tankType) {
-        const types = GameConfig.TANK_TYPES || {};
-        return types[tankType] || types.basic || {};
+    getTankTier(level) {
+        return GameConfig.getTankTier ? GameConfig.getTankTier(level) : 0;
     }
 
-    getTankSize(playerOrType) {
+    getTankTypeConfig(tankType, level) {
+        const types = GameConfig.TANK_TYPES || {};
+        const cfg = types[tankType || 'basic'] || types.basic || {};
+        const tier = level != null ? this.getTankTier(level) : 0;
+        const resolve = (v) => typeof v === 'function' ? v(tier) : (v ?? 1);
+        return {
+            size: cfg.size ?? 30,
+            barrelLength: cfg.barrelLength ?? 25,
+            barrelWidth: cfg.barrelWidth ?? 14,
+            color: cfg.color,
+            viewRangeMultiplier: resolve(cfg.viewRangeMultiplier),
+            movementSpeedMultiplier: resolve(cfg.movementSpeedMultiplier),
+            bulletSpeedMultiplier: resolve(cfg.bulletSpeedMultiplier),
+            bulletDamageMultiplier: resolve(cfg.bulletDamageMultiplier),
+            bulletLifetimeMultiplier: resolve(cfg.bulletLifetimeMultiplier),
+            bulletSizeMultiplier: resolve(cfg.bulletSizeMultiplier),
+            reloadMultiplier: resolve(cfg.reloadMultiplier),
+            penetrationMultiplier: resolve(cfg.penetrationMultiplier),
+            bodyDamageMultiplier: resolve(cfg.bodyDamageMultiplier),
+            maxHealthMultiplier: resolve(cfg.maxHealthMultiplier),
+            cannonsCount: typeof cfg.cannonsCount === 'function' ? cfg.cannonsCount(tier) : (cfg.cannonsCount ?? 1)
+        };
+    }
+
+    getTankSize(playerOrType, level) {
         const type = typeof playerOrType === 'object' ? (playerOrType.tankType || 'basic') : playerOrType;
-        return (this.getTankTypeConfig(type).size || GameConfig.TANK.DEFAULT_SIZE);
+        const lvl = typeof playerOrType === 'object' ? (playerOrType.level || 1) : level;
+        const cfg = this.getTankTypeConfig(type, lvl);
+        return cfg.size || GameConfig.TANK.DEFAULT_SIZE;
+    }
+
+    async handleChangeTank(socket, data) {
+        const player = this.playerManager.getPlayer(socket.id);
+        if (!player || player.isDead || !player.roomStake) {
+            socket.emit('changeTankError', { message: 'Cannot change tank right now' });
+            return;
+        }
+        const rawType = (data.tankType || 'basic').toString().toLowerCase();
+        const valid = ['basic', 'sniper', 'gun', 'heavy'].includes(rawType);
+        if (!valid) {
+            socket.emit('changeTankError', { message: 'Invalid tank type' });
+            return;
+        }
+        if (player.level < 5) {
+            socket.emit('changeTankError', { message: 'Reach level 5 to unlock other tanks' });
+            return;
+        }
+        player.tankType = rawType;
+        this.playerManager.applyStatChanges(player);
+        if (player.health > player.maxHealth) player.health = player.maxHealth;
+        socket.emit('tankChanged', { playerId: socket.id, tankType: rawType });
+        socket.to(`room_${player.roomStake}`).emit('playerTankChanged', { playerId: socket.id, tankType: rawType });
     }
 
     async handleJoinRoom(socket, data) {
-        const { stake, canvasWidth, canvasHeight, tankType: requestedTankType } = data;
-        const rawType = (requestedTankType && typeof requestedTankType === 'string')
-            ? requestedTankType.toLowerCase() : 'basic';
-        const tankType = (GameConfig.TANK_TYPES && GameConfig.TANK_TYPES[rawType])
-            ? rawType
-            : 'basic';
+        const { stake, canvasWidth, canvasHeight } = data;
+        const tankType = 'basic';  // Always start with Basic; unlock others at level 5
 
         // Require authenticated user (account system)
         if (!socket.user) {
@@ -356,7 +404,7 @@ class GameServer {
             return;
         }
 
-        const typeConfig = this.getTankTypeConfig(player.tankType);
+        const typeConfig = this.getTankTypeConfig(player.tankType, player.level);
         const moveMult = typeConfig.movementSpeedMultiplier || 1;
 
         // Update player position (movement)

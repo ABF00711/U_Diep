@@ -29,6 +29,14 @@ class PlayerManager {
         return x;
     }
 
+    getMaxHealthMultiplier(tankType, level) {
+        const types = GameConfig.TANK_TYPES || {};
+        const cfg = types[tankType || 'basic'] || types.basic || {};
+        const tier = GameConfig.getTankTier ? GameConfig.getTankTier(level || 1) : 0;
+        const v = cfg.maxHealthMultiplier;
+        return typeof v === 'function' ? v(tier) : (v ?? 1);
+    }
+
     /**
      * Apply death penalty: level halved, stats reset, player must re-allocate.
      */
@@ -40,9 +48,8 @@ class PlayerManager {
         player.stats = { ...this.getDefaultStats() };
         player.statPoints = Math.max(0, newLevel - 1);
         player.pendingStatAllocation = player.statPoints > 0;
-        const types = GameConfig.TANK_TYPES || {};
-        const typeConfig = types[player.tankType] || types.basic || {};
-        const baseMax = GameConfig.TANK.DEFAULT_MAX_HEALTH * (typeConfig.maxHealthMultiplier || 1);
+        const maxHealthMult = this.getMaxHealthMultiplier(player.tankType, newLevel);
+        const baseMax = GameConfig.TANK.DEFAULT_MAX_HEALTH * maxHealthMult;
         player.maxHealth = baseMax;
         player.health = player.maxHealth;
         this.applyStatChanges(player);
@@ -50,19 +57,15 @@ class PlayerManager {
 
     /**
      * Create a new player
-     * @param {number} [userId] - Database user id (for balance persistence)
-     * @param {object} [gameStats] - { level, xp, xpToNextLevel, stats } from DB (persisted progress)
-     * @param {string} [tankType] - Tank type (basic, sniper, gun, bumper)
+     * @param {string} [tankType] - Tank type (basic, sniper, gun, heavy) - always basic on join
      */
     createPlayer(socketId, playerName, balance, x, y, canvasWidth, canvasHeight, userId = null, gameStats = null, tankType = 'basic') {
-        const types = GameConfig.TANK_TYPES || {};
-        const typeConfig = types[tankType] || types.basic || {};
-        const maxHealthMult = typeConfig.maxHealthMultiplier || 1;
+        const level = gameStats && gameStats.level != null ? gameStats.level : 1;
+        const maxHealthMult = this.getMaxHealthMultiplier(tankType, level);
         const defaultStats = this.getDefaultStats();
         const stats = gameStats && gameStats.stats
             ? { ...defaultStats, ...gameStats.stats }
             : { ...defaultStats };
-        const level = gameStats && gameStats.level != null ? gameStats.level : 1;
         const xp = gameStats && gameStats.xp != null ? gameStats.xp : 0;
         const xpToNextLevel = gameStats && gameStats.xpToNextLevel != null ? gameStats.xpToNextLevel : GameConfig.XP.BASE_XP_TO_NEXT_LEVEL;
         const totalAllocated = Object.values(stats).reduce((s, v) => s + (Number(v) || 0), 0);
@@ -141,9 +144,7 @@ class PlayerManager {
      */
     applyStatChanges(player, statName, tankType) {
         if (statName === undefined || statName === null || statName === 'maxHealth') {
-            const types = GameConfig.TANK_TYPES || {};
-            const typeConfig = types[tankType || player.tankType] || types.basic || {};
-            const maxHealthMult = typeConfig.maxHealthMultiplier || 1;
+            const maxHealthMult = this.getMaxHealthMultiplier(tankType || player.tankType, player.level);
             const base = GameConfig.TANK.DEFAULT_MAX_HEALTH * maxHealthMult;
             const points = player.stats.maxHealth || 0;
             const currentHealthPercentage = player.maxHealth > 0 ? player.health / player.maxHealth : 1;
