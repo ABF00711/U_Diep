@@ -47,13 +47,21 @@ class BulletManager {
         lifetime *= cfg.bulletLifetimeMultiplier || 1;
 
         const bulletsPerShot = cfg.cannonsCount || 1;
-        // Gun: bullets in a forward cone (~50° total spread)
-        const spreadRad = bulletsPerShot > 1 ? (50 * (Math.PI / 180) / Math.max(1, bulletsPerShot - 1)) : 0;
         const bullets = [];
 
         for (let i = 0; i < bulletsPerShot; i++) {
-            const spreadOffset = bulletsPerShot === 1 ? 0 : (i - (bulletsPerShot - 1) / 2) * spreadRad;
-            const bulletAngle = angle + spreadOffset;
+            let bulletAngle;
+            if (bulletsPerShot === 1) {
+                bulletAngle = angle;
+            } else if (bulletsPerShot === 2 || bulletsPerShot === 3) {
+                // 2–3 cannons: all fire forward (mouse aim) in a cone
+                const spreadRad = (50 * (Math.PI / 180)) / Math.max(1, bulletsPerShot - 1);
+                const spreadOffset = (i - (bulletsPerShot - 1) / 2) * spreadRad;
+                bulletAngle = angle + spreadOffset;
+            } else {
+                // 4+ cannons: each fires in its own direction (front, back, sides)
+                bulletAngle = angle + (2 * Math.PI * i) / bulletsPerShot;
+            }
 
             bullets.push({
                 id: `bullet_${player.id}_${Date.now()}_${Math.random()}_${i}`,

@@ -282,9 +282,9 @@ class Tank {
             ctx.strokeStyle = barrelStroke;
             ctx.lineWidth = 2;
             ctx.strokeRect(this.size, -this.barrelWidth / 2, this.barrelLength, this.barrelWidth);
-        } else {
-            // Multiple cannons in a forward arc (placed on body circumference)
-            const coneRad = (70 * Math.PI) / 180;
+        } else if (cannons === 2 || cannons === 3) {
+            // 2 or 3 cannons: front only (forward arc)
+            const coneRad = (60 * Math.PI) / 180;
             for (let i = 0; i < cannons; i++) {
                 ctx.save();
                 const t = cannons === 1 ? 0.5 : i / Math.max(1, cannons - 1);
@@ -293,6 +293,22 @@ class Tank {
                 const by = Math.sin(placementAngle) * this.size;
                 ctx.translate(bx, by);
                 ctx.rotate(this.angle);
+                ctx.fillStyle = barrelColor;
+                ctx.fillRect(0, -this.barrelWidth / 2, this.barrelLength, this.barrelWidth);
+                ctx.strokeStyle = barrelStroke;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(0, -this.barrelWidth / 2, this.barrelLength, this.barrelWidth);
+                ctx.restore();
+            }
+        } else {
+            // 4+ cannons: distributed around body, rotate with tank aim
+            for (let i = 0; i < cannons; i++) {
+                ctx.save();
+                const placementAngle = this.angle + (2 * Math.PI * i) / cannons;
+                const bx = Math.cos(placementAngle) * this.size;
+                const by = Math.sin(placementAngle) * this.size;
+                ctx.translate(bx, by);
+                ctx.rotate(placementAngle);
                 ctx.fillStyle = barrelColor;
                 ctx.fillRect(0, -this.barrelWidth / 2, this.barrelLength, this.barrelWidth);
                 ctx.strokeStyle = barrelStroke;
