@@ -56,7 +56,7 @@ const GameConfig = {
             color: '#5dade2',
             cannonsCount: 1,
             // Per-tier modifiers (tier 0-6). Base + (tier * step)
-            viewRangeMultiplier: (tier) => 1 + tier * 0.12,      // 1.12 to 1.72
+            viewRangeMultiplier: (tier) => 1 + tier * 0.06,      // 1.06 to 1.36 (reduced from 0.11)
             movementSpeedMultiplier: (tier) => Math.max(0.5, 1 - tier * 0.08),  // 0.92 to 0.52
             bulletSpeedMultiplier: (tier) => 1 + tier * 0.1,     // 1.1 to 1.6
             bulletDamageMultiplier: (tier) => 1 + tier * 0.08,   // 1.08 to 1.48
