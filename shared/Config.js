@@ -172,6 +172,9 @@ const GameConfig = {
         DEFAULT_BOT_COUNT: 100,
         DEFAULT_ENEMY_TANK_COUNT: 5,
         MAX_DELTA_TIME: 0.1,               // Cap deltaTime to prevent large jumps
+        // Fixed viewport (prevents zoom cheating - same view regardless of browser zoom/settings)
+        VIEW_WIDTH: 1920,
+        VIEW_HEIGHT: 1080,
         CANVAS_MIN_WIDTH: 800,
         CANVAS_MIN_HEIGHT: 600,
         SPAWN_MARGIN: 50,                  // Margin from edges when spawning

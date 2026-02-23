@@ -23,12 +23,11 @@ class Input {
             this.keys[e.key.toLowerCase()] = false;
         });
 
-        // Mouse events
+        // Mouse events (convert to logical coords for fixed viewport / zoom protection)
         window.addEventListener('mousemove', (e) => {
-            const canvas = document.getElementById('gameCanvas');
-            const rect = canvas.getBoundingClientRect();
-            this.mouse.x = e.clientX - rect.left;
-            this.mouse.y = e.clientY - rect.top;
+            const pos = this._toLogicalCoords(e.clientX, e.clientY);
+            this.mouse.x = pos.x;
+            this.mouse.y = pos.y;
         });
 
         window.addEventListener('mousedown', (e) => {
@@ -93,7 +92,27 @@ class Input {
         return false;
     }
 
-    // Get mouse position
+    // Map screen coords to logical canvas coords (handles CSS scaling from fixed viewport)
+    _toLogicalCoords(clientX, clientY) {
+        const canvas = document.getElementById('gameCanvas');
+        if (!canvas) return { x: 0, y: 0 };
+        const rect = canvas.getBoundingClientRect();
+        const logicalW = canvas.width;
+        const logicalH = canvas.height;
+        const scale = Math.min(rect.width / logicalW, rect.height / logicalH);
+        const contentW = logicalW * scale;
+        const contentH = logicalH * scale;
+        const left = rect.left + (rect.width - contentW) / 2;
+        const top = rect.top + (rect.height - contentH) / 2;
+        const x = (clientX - left) / scale;
+        const y = (clientY - top) / scale;
+        return {
+            x: Math.max(0, Math.min(logicalW, x)),
+            y: Math.max(0, Math.min(logicalH, y))
+        };
+    }
+
+    // Get mouse position (logical canvas coords)
     getMousePosition() {
         return { x: this.mouse.x, y: this.mouse.y };
     }

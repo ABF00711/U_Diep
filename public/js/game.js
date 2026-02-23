@@ -61,11 +61,15 @@ class Game {
     }
 
     resizeCanvas() {
-        // Set canvas to fill window
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
+        // Fixed logical resolution - immune to browser zoom/settings (fair play)
+        const w = GameConfig.GAME.VIEW_WIDTH || 1920;
+        const h = GameConfig.GAME.VIEW_HEIGHT || 1080;
+        this.canvas.width = w;
+        this.canvas.height = h;
+        this.canvas.style.width = '100%';
+        this.canvas.style.height = '100%';
+        this.canvas.style.objectFit = 'contain';
         
-        // Update camera viewport size
         this.camera.width = this.canvas.width;
         this.camera.height = this.canvas.height;
     }
