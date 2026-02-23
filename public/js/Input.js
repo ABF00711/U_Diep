@@ -51,6 +51,13 @@ class Input {
                 e.preventDefault();
             }
         });
+
+        // Prevent Ctrl+Scroll (browser zoom) for fair play
+        window.addEventListener('wheel', (e) => {
+            if (e.ctrlKey) {
+                e.preventDefault();
+            }
+        }, { passive: false });
     }
 
     // Check if key is pressed
