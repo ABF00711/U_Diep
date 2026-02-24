@@ -61,11 +61,15 @@ class Game {
     }
 
     resizeCanvas() {
-        // Set canvas to fill window
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
+        // Fixed logical resolution - immune to browser zoom/settings (fair play)
+        const w = GameConfig.GAME.VIEW_WIDTH || 1920;
+        const h = GameConfig.GAME.VIEW_HEIGHT || 1080;
+        this.canvas.width = w;
+        this.canvas.height = h;
+        this.canvas.style.width = '100%';
+        this.canvas.style.height = '100%';
+        this.canvas.style.objectFit = 'contain';
         
-        // Update camera viewport size
         this.camera.width = this.canvas.width;
         this.camera.height = this.canvas.height;
     }
@@ -74,9 +78,10 @@ class Game {
      * Convert world coordinates to screen coordinates (for rendering)
      */
     worldToScreen(worldX, worldY) {
+        const v = this.camera.viewScale || 1;
         return {
-            x: worldX - this.camera.x + this.camera.width / 2,
-            y: worldY - this.camera.y + this.camera.height / 2
+            x: (worldX - this.camera.x) / v + this.camera.width / 2,
+            y: (worldY - this.camera.y) / v + this.camera.height / 2
         };
     }
 
@@ -84,9 +89,10 @@ class Game {
      * Convert screen coordinates to world coordinates (for input)
      */
     screenToWorld(screenX, screenY) {
+        const v = this.camera.viewScale || 1;
         return {
-            x: screenX + this.camera.x - this.camera.width / 2,
-            y: screenY + this.camera.y - this.camera.height / 2
+            x: (screenX - this.camera.width / 2) * v + this.camera.x,
+            y: (screenY - this.camera.height / 2) * v + this.camera.y
         };
     }
 
@@ -108,14 +114,27 @@ class Game {
         this.camera.x += (targetX - this.camera.x) * smoothFactor;
         this.camera.y += (targetY - this.camera.y) * smoothFactor;
         
-        // Clamp camera to world boundaries
+        // View range from tank type (Sniper sees more)
+        const viewMult = this.getViewRangeMultiplier();
+        this.camera.viewScale = viewMult;
+
+        // Clamp camera to world boundaries (use scaled viewport for bounds)
         const worldWidth = GameConfig.GAME.WORLD_WIDTH;
         const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
-        const halfViewportWidth = this.camera.width / 2;
-        const halfViewportHeight = this.camera.height / 2;
+        const halfViewportWidth = (this.camera.width * viewMult) / 2;
+        const halfViewportHeight = (this.camera.height * viewMult) / 2;
         
         this.camera.x = Math.max(halfViewportWidth, Math.min(worldWidth - halfViewportWidth, this.camera.x));
         this.camera.y = Math.max(halfViewportHeight, Math.min(worldHeight - halfViewportHeight, this.camera.y));
+    }
+
+    getViewRangeMultiplier() {
+        if (!this.playerTank) return 1;
+        const types = GameConfig.TANK_TYPES || {};
+        const cfg = types[this.playerTank.tankType || 'basic'] || types.basic || {};
+        const tier = GameConfig.getTankTier ? GameConfig.getTankTier(this.playerTank.level || 1) : 0;
+        const v = cfg.viewRangeMultiplier;
+        return typeof v === 'function' ? v(tier) : (v ?? 1);
     }
 
     setupUI() {
@@ -134,29 +153,190 @@ class Game {
             this.killSelf();
         });
 
-        // Hide loading screen
+        // Logout button
+        const logoutBtn = document.getElementById('logoutButton');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', () => {
+                if (typeof localStorage !== 'undefined') localStorage.removeItem('u_diep_token');
+                this.showAuthScreen();
+            });
+        }
+
+        // Hide loading screen, fetch server announcement, then show auth or room selection
         setTimeout(() => {
             document.getElementById('loadingScreen').classList.add('hidden');
-            this.showRoomSelection();
-            // Initialize balance display
-            this.updateBalanceDisplay();
-            
-            // Request room counts after connection is established
-            if (this.networkManager && this.networkManager.isConnected()) {
-                // Small delay to ensure socket is ready
-                setTimeout(() => {
-                    this.networkManager.requestRoomCounts();
-                }, 100);
-            }
+            this.showAnnouncementThenStart();
         }, GameConfig.UI.LOADING_SCREEN_DELAY);
     }
 
+    showAnnouncementThenStart() {
+        const apiBase = window.location.origin;
+        fetch(apiBase + '/api/announcement')
+            .then(res => res.ok ? res.json() : { title: '', content: '' })
+            .catch(() => ({ title: '', content: '' }))
+            .then((data) => {
+                const title = (data.title || '').trim();
+                const content = (data.content || '').trim();
+                if (title || content) {
+                    this.showAnnouncement(title, content, () => this.afterAnnouncementDismissed());
+                } else {
+                    this.afterAnnouncementDismissed();
+                }
+            });
+    }
+
+    showAnnouncement(title, content, onDismiss) {
+        const modal = document.getElementById('announcementModal');
+        const titleEl = document.getElementById('announcementTitle');
+        const bodyEl = document.getElementById('announcementBody');
+        const okBtn = document.getElementById('announcementOk');
+        if (!modal || !titleEl || !bodyEl || !okBtn) return;
+        titleEl.textContent = title || 'Announcement';
+        bodyEl.textContent = content || '';
+        bodyEl.style.display = content ? 'block' : 'none';
+        modal.classList.remove('hidden');
+        const handler = () => {
+            okBtn.removeEventListener('click', handler);
+            modal.classList.add('hidden');
+            if (typeof onDismiss === 'function') onDismiss();
+        };
+        okBtn.addEventListener('click', handler);
+    }
+
+    afterAnnouncementDismissed() {
+        const token = typeof localStorage !== 'undefined' ? localStorage.getItem('u_diep_token') : null;
+        if (!token) {
+            this.showAuthScreen();
+            this.setupAuthForm();
+        } else {
+            this.fetchUserAndShowRoomSelection();
+        }
+    }
+
+    showAuthScreen() {
+        document.getElementById('authScreen').classList.remove('hidden');
+        document.getElementById('roomSelection').classList.add('hidden');
+        document.getElementById('minimap').classList.add('hidden');
+        this.state = 'menu';
+    }
+
+    setupAuthForm() {
+        if (this.authFormSetup) return;
+        this.authFormSetup = true;
+        const form = document.getElementById('authForm');
+        const tabLogin = document.getElementById('authTabLogin');
+        const tabRegister = document.getElementById('authTabRegister');
+        const emailGroup = document.getElementById('authEmailGroup');
+        const usernameGroup = document.getElementById('authUsernameGroup');
+        const submitBtn = document.getElementById('authSubmit');
+        const errorEl = document.getElementById('authError');
+
+        const showError = (msg) => {
+            errorEl.textContent = msg;
+            errorEl.classList.remove('hidden');
+        };
+        const clearError = () => {
+            errorEl.textContent = '';
+            errorEl.classList.add('hidden');
+        };
+
+        const isRegister = () => tabRegister.classList.contains('active');
+        tabLogin.addEventListener('click', () => {
+            tabLogin.classList.add('active');
+            tabRegister.classList.remove('active');
+            submitBtn.textContent = 'Login';
+            form.reset();
+            clearError();
+        });
+        tabRegister.addEventListener('click', () => {
+            tabRegister.classList.add('active');
+            tabLogin.classList.remove('active');
+            submitBtn.textContent = 'Register';
+            form.reset();
+            clearError();
+        });
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            clearError();
+            const email = document.getElementById('authEmail').value.trim();
+            const username = document.getElementById('authUsername').value.trim();
+            const password = document.getElementById('authPassword').value;
+            const apiBase = window.location.origin;
+            const endpoint = isRegister() ? '/api/auth/register' : '/api/auth/login';
+            const body = isRegister()
+                ? { email, username, password }
+                : (email ? { email, password } : { username, password });
+
+            if (!password || password.length < 6) {
+                showError('Password must be at least 6 characters');
+                return;
+            }
+            if (isRegister() && (!email || !username)) {
+                showError('Email and username are required');
+                return;
+            }
+            if (!isRegister() && !email && !username) {
+                showError('Enter email or username');
+                return;
+            }
+
+            try {
+                const res = await fetch(apiBase + endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    showError(data.error || 'Request failed');
+                    return;
+                }
+                if (data.token) {
+                    localStorage.setItem('u_diep_token', data.token);
+                    if (data.user && data.user.balance != null) {
+                        this.economy.setBalance(data.user.balance);
+                    }
+                    window.location.reload();
+                }
+            } catch (err) {
+                showError('Network error. Try again.');
+            }
+        });
+    }
+
+    fetchUserAndShowRoomSelection() {
+        const apiBase = window.location.origin;
+        const token = localStorage.getItem('u_diep_token');
+        fetch(apiBase + '/api/auth/me', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        })
+            .then(res => res.ok ? res.json() : Promise.reject())
+            .then(data => {
+                if (data.user) {
+                    this.economy.setBalance(data.user.balance);
+                    const welcome = document.getElementById('welcomeUser');
+                    if (welcome) welcome.textContent = 'Welcome, ' + (data.user.username || data.user.email) + '!';
+                }
+                this.showRoomSelection();
+                this.updateBalanceDisplay();
+                if (this.networkManager && this.networkManager.isConnected()) {
+                    setTimeout(() => this.networkManager.requestRoomCounts(), 100);
+                }
+            })
+            .catch(() => {
+                localStorage.removeItem('u_diep_token');
+                this.showAuthScreen();
+                this.setupAuthForm();
+            });
+    }
+
     showRoomSelection() {
+        document.getElementById('authScreen').classList.add('hidden');
         document.getElementById('roomSelection').classList.remove('hidden');
         document.getElementById('minimap').classList.add('hidden');
         this.state = 'menu';
         
-        // Request room counts from server
         if (this.networkManager && this.networkManager.isConnected()) {
             this.networkManager.requestRoomCounts();
         }
@@ -230,13 +410,15 @@ class Game {
         }
     }
 
-    startGame() {
+    startGame(playerDataFromServer) {
         this.hideRoomSelection();
         
         // Get current wager amount (for reward calculation)
         const currentStake = this.economy.getCurrentWager();
+        const tankType = (playerDataFromServer && playerDataFromServer.tankType) || 'basic';
+        const level = (playerDataFromServer && playerDataFromServer.level) || 1;
         
-        // Create player tank (position will be set by server)
+        // Create player tank (position will be set by server) - always start with Basic
         this.playerTank = new Tank(
             this.canvas.width / 2,
             this.canvas.height / 2,
@@ -244,9 +426,50 @@ class Game {
                 color: GameConfig.COLORS.PLAYER_TANK,
                 isPlayer: true,
                 name: 'Player',
-                stake: currentStake // Store player's stake
+                stake: currentStake,
+                tankType: tankType,
+                level: level
             }
         );
+        this.setupHudTankSelection();
+    }
+
+    setupHudTankSelection() {
+        const container = document.getElementById('hudTankSelection');
+        const btns = document.querySelectorAll('.hud-tank-btn');
+        if (!container || !btns.length) return;
+        const updateVisibility = () => {
+            const level = this.playerTank ? (this.playerTank.level || 1) : 0;
+            if (level >= 5) {
+                container.classList.remove('hidden');
+            } else {
+                container.classList.add('hidden');
+            }
+        };
+        const updateActive = (tankType) => {
+            btns.forEach(b => {
+                b.classList.toggle('active', (b.dataset.tank || 'basic') === tankType);
+            });
+        };
+        updateVisibility();
+        btns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tank = btn.dataset.tank || 'basic';
+                const level = this.playerTank ? (this.playerTank.level || 1) : 0;
+                if (level < 5) return;
+                this.networkManager.changeTank(tank);
+                updateActive(tank);
+            });
+        });
+        this._updateHudTankVisibility = updateVisibility;
+        this._updateHudTankActive = updateActive;
+    }
+
+    updateHudTankSelection() {
+        if (this._updateHudTankVisibility) this._updateHudTankVisibility();
+        if (this._updateHudTankActive && this.playerTank) {
+            this._updateHudTankActive(this.playerTank.tankType || 'basic');
+        }
     }
 
     loadBotSprites() {
@@ -396,7 +619,7 @@ class Game {
     update(deltaTime) {
         if (this.state !== 'playing') return;
 
-        // Check for pending stat allocation (show UI if needed)
+        // Auto-show stat allocation when player levels up (has points to allocate)
         if (this.playerTank && this.playerTank.hasPendingStatAllocation() && !this.statAllocationUI.isOpen()) {
             this.statAllocationUI.show();
         }
@@ -533,9 +756,12 @@ class Game {
         this.drawGrid();
 
         if (this.state === 'playing') {
-            // Apply camera transform for all world-space rendering
+            // Apply camera transform (view scale: Sniper zooms out to see more)
             this.ctx.save();
-            this.ctx.translate(-this.camera.x + this.camera.width / 2, -this.camera.y + this.camera.height / 2);
+            const v = this.camera.viewScale || 1;
+            this.ctx.translate(this.camera.width / 2, this.camera.height / 2);
+            this.ctx.scale(1 / v, 1 / v);
+            this.ctx.translate(-this.camera.x, -this.camera.y);
             
             // Draw bots
             this.bots.forEach(bot => {
@@ -582,13 +808,13 @@ class Game {
                         statPointsEl.style.cursor = 'pointer';
                         statPointsEl.style.textDecoration = 'underline';
                         statPointsEl.addEventListener('click', () => {
-                            if (!this.statAllocationUI.isOpen()) {
+                            if (statPoints > 0 && !this.statAllocationUI.isOpen()) {
                                 this.statAllocationUI.show();
                             }
                         });
                         document.getElementById('hud').appendChild(statPointsEl);
                     }
-                    statPointsEl.textContent = `Stat Points: ${statPoints} (Click to allocate)`;
+                    statPointsEl.textContent = `Stat Points: ${statPoints} (bottom-left or 1-8)`;
                 } else if (statPointsEl) {
                     statPointsEl.textContent = '';
                 }

@@ -7,6 +7,7 @@ const PlayerManager = require('./managers/PlayerManager.js');
 const BotManager = require('./managers/BotManager.js');
 const BulletManager = require('./managers/BulletManager.js');
 const CollisionManager = require('./managers/CollisionManager.js');
+const userRepository = require('./db/userRepository.js');
 
 class GameServer {
     constructor(io) {
@@ -25,28 +26,37 @@ class GameServer {
         this.io.on('connection', (socket) => {
             console.log(`Player connected: ${socket.id}`);
 
-            socket.on('joinRoom', (data) => {
-                this.handleJoinRoom(socket, data);
+            socket.on('joinRoom', async (data) => {
+                try {
+                    await this.handleJoinRoom(socket, data);
+                } catch (err) {
+                    console.error('joinRoom error:', err);
+                    socket.emit('joinRoomError', { message: 'Server error' });
+                }
             });
 
             socket.on('playerInput', (data) => {
                 this.handlePlayerInput(socket, data);
             });
 
-            socket.on('statAllocation', (data) => {
-                this.handleStatAllocation(socket, data);
+            socket.on('statAllocation', async (data) => {
+                await this.handleStatAllocation(socket, data);
             });
 
-            socket.on('killSelf', () => {
-                this.handleKillSelf(socket);
+            socket.on('killSelf', async () => {
+                await this.handleKillSelf(socket);
             });
 
-            socket.on('disconnect', () => {
-                this.handleDisconnect(socket);
+            socket.on('disconnect', async () => {
+                await this.handleDisconnect(socket);
             });
 
             socket.on('playerDamage', (data) => {
                 this.handlePlayerDamage(socket, data);
+            });
+
+            socket.on('changeTank', (data) => {
+                this.handleChangeTank(socket, data);
             });
 
             // Request room player counts
@@ -58,12 +68,101 @@ class GameServer {
 
     // ==================== Socket Handlers ====================
 
-    handleJoinRoom(socket, data) {
-        const { stake, playerName, balance, canvasWidth, canvasHeight } = data;
+    /**
+     * Returns the socket id of a player with the given userId who is currently in a room (any room).
+     * Used to enforce one tank per account.
+     */
+    getActiveSocketIdForUserId(userId) {
+        if (userId == null) return null;
+        const rooms = this.roomManager.getAllRooms();
+        for (const [, room] of rooms) {
+            for (const [socketId, player] of room.players) {
+                if (player.userId === userId) return socketId;
+            }
+        }
+        return null;
+    }
+
+    getTankTier(level) {
+        return GameConfig.getTankTier ? GameConfig.getTankTier(level) : 0;
+    }
+
+    getTankTypeConfig(tankType, level) {
+        const types = GameConfig.TANK_TYPES || {};
+        const cfg = types[tankType || 'basic'] || types.basic || {};
+        const tier = level != null ? this.getTankTier(level) : 0;
+        const resolve = (v) => typeof v === 'function' ? v(tier) : (v ?? 1);
+        return {
+            size: cfg.size ?? 30,
+            barrelLength: cfg.barrelLength ?? 25,
+            barrelWidth: cfg.barrelWidth ?? 14,
+            color: cfg.color,
+            viewRangeMultiplier: resolve(cfg.viewRangeMultiplier),
+            movementSpeedMultiplier: resolve(cfg.movementSpeedMultiplier),
+            bulletSpeedMultiplier: resolve(cfg.bulletSpeedMultiplier),
+            bulletDamageMultiplier: resolve(cfg.bulletDamageMultiplier),
+            bulletLifetimeMultiplier: resolve(cfg.bulletLifetimeMultiplier),
+            bulletSizeMultiplier: resolve(cfg.bulletSizeMultiplier),
+            reloadMultiplier: resolve(cfg.reloadMultiplier),
+            penetrationMultiplier: resolve(cfg.penetrationMultiplier),
+            bodyDamageMultiplier: resolve(cfg.bodyDamageMultiplier),
+            maxHealthMultiplier: resolve(cfg.maxHealthMultiplier),
+            cannonsCount: typeof cfg.cannonsCount === 'function' ? cfg.cannonsCount(tier) : (cfg.cannonsCount ?? 1)
+        };
+    }
+
+    getTankSize(playerOrType, level) {
+        const type = typeof playerOrType === 'object' ? (playerOrType.tankType || 'basic') : playerOrType;
+        const lvl = typeof playerOrType === 'object' ? (playerOrType.level || 1) : level;
+        const cfg = this.getTankTypeConfig(type, lvl);
+        return cfg.size || GameConfig.TANK.DEFAULT_SIZE;
+    }
+
+    async handleChangeTank(socket, data) {
+        const player = this.playerManager.getPlayer(socket.id);
+        if (!player || player.isDead || !player.roomStake) {
+            socket.emit('changeTankError', { message: 'Cannot change tank right now' });
+            return;
+        }
+        const rawType = (data.tankType || 'basic').toString().toLowerCase();
+        const valid = ['basic', 'sniper', 'gun', 'heavy'].includes(rawType);
+        if (!valid) {
+            socket.emit('changeTankError', { message: 'Invalid tank type' });
+            return;
+        }
+        if (player.level < 5) {
+            socket.emit('changeTankError', { message: 'Reach level 5 to unlock other tanks' });
+            return;
+        }
+        player.tankType = rawType;
+        this.playerManager.applyStatChanges(player);
+        if (player.health > player.maxHealth) player.health = player.maxHealth;
+        socket.emit('tankChanged', { playerId: socket.id, tankType: rawType });
+        socket.to(`room_${player.roomStake}`).emit('playerTankChanged', { playerId: socket.id, tankType: rawType });
+    }
+
+    async handleJoinRoom(socket, data) {
+        const { stake, canvasWidth, canvasHeight } = data;
+        const tankType = 'basic';  // Always start with Basic; unlock others at level 5
+
+        // Require authenticated user (account system)
+        if (!socket.user) {
+            socket.emit('joinRoomError', { message: 'Please log in to join a room' });
+            return;
+        }
 
         // Validate stake
         if (!GameConfig.ECONOMY.ROOM_STAKES.includes(stake)) {
             socket.emit('joinRoomError', { message: 'Invalid stake amount' });
+            return;
+        }
+
+        // One account, one tank: block if this account already has an active tank in another tab/session
+        const activeSocketId = this.getActiveSocketIdForUserId(socket.user.id);
+        if (activeSocketId != null && activeSocketId !== socket.id) {
+            socket.emit('joinRoomError', {
+                message: 'This account is already in a game. Close the other tab or wait until that session ends.'
+            });
             return;
         }
 
@@ -89,10 +188,10 @@ class GameServer {
         // Get or create room
         const room = this.roomManager.getOrCreateRoom(stake);
 
-        // Calculate spawn position in world coordinates
+        // Calculate spawn position in world coordinates (use tank size for spawn bounds)
         const worldWidth = GameConfig.GAME.WORLD_WIDTH;
         const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
-        const tankSize = 30;
+        const tankSize = this.getTankSize(tankType);
         const margin = 100;
         const minX = margin + tankSize;
         const maxX = Math.max(worldWidth - margin - tankSize, minX + 100);
@@ -102,41 +201,59 @@ class GameServer {
         // Store canvas dimensions for player (used for UI/viewport, not world bounds)
         const spawnWidth = canvasWidth || 1920;
         const spawnHeight = canvasHeight || 1080;
+
+        // Load balance and game stats from database (authoritative)
+        let balance;
+        let gameStats = null;
+        try {
+            balance = await userRepository.getBalance(socket.user.id);
+            gameStats = await userRepository.getGameStats(socket.user.id);
+        } catch (err) {
+            console.error('DB load error:', err);
+            socket.emit('joinRoomError', { message: 'Failed to load data' });
+            return;
+        }
+
+        const playerName = socket.user.username || socket.user.email || 'Player';
         
         // Get player (after potential room switch cleanup)
         let player = this.playerManager.getPlayer(socket.id);
         
         if (player && !player.roomStake) {
-            // Player exists but was removed from room (died/disconnected/switched) - reset for rejoin
-            // CRITICAL: Ensure player is fully removed from any old Socket.io rooms first
+            // Rejoin: apply persisted level, xp, stats from DB; ensure tankType is set
+            player.tankType = tankType;
             if (player.socket) {
-                // Leave all possible room sockets (safety check to prevent duplicate subscriptions)
                 GameConfig.ECONOMY.ROOM_STAKES.forEach(possibleStake => {
                     player.socket.leave(`room_${possibleStake}`);
                 });
             }
             
-            // Sync balance from client (client sends original balance before deduction)
             player.balance = balance;
+            if (player.userId == null) player.userId = socket.user.id;
+            if (gameStats) {
+                player.level = gameStats.level;
+                player.xp = gameStats.xp;
+                player.xpToNextLevel = gameStats.xpToNextLevel;
+                player.stats = { ...this.playerManager.getDefaultStats(), ...gameStats.stats };
+                const totalAllocated = Object.values(player.stats).reduce((s, v) => s + (Number(v) || 0), 0);
+                player.statPoints = Math.max(0, (player.level - 1) - totalAllocated);
+                player.pendingStatAllocation = player.statPoints > 0;
+            }
             
             player.isDead = false;
-            player.health = GameConfig.TANK.DEFAULT_HEALTH;
-            player.maxHealth = GameConfig.TANK.DEFAULT_MAX_HEALTH;
-            
-            // Recalculate maxHealth based on stats (preserve stat allocations)
             this.playerManager.applyStatChanges(player);
+            player.health = player.maxHealth;
             
             player.x = minX + Math.random() * (maxX - minX);
             player.y = minY + Math.random() * (maxY - minY);
-            player.vx = 0; // Reset velocity
-            player.vy = 0; // Reset velocity
+            player.vx = 0;
+            player.vy = 0;
             player.canvasWidth = spawnWidth;
             player.canvasHeight = spawnHeight;
             player.angle = 0;
-            // Keep level, XP, stats - balance synced from client above, then server deducts stake
             console.log(`Player ${socket.id} joining room $${stake} (level ${player.level})`);
         } else if (!player) {
-            // Create new player with balance from client (original balance before deduction)
+            // New session: create player with persisted game stats from DB
             player = this.playerManager.createPlayer(
                 socket.id,
                 playerName,
@@ -144,12 +261,14 @@ class GameServer {
                 minX + Math.random() * (maxX - minX),
                 minY + Math.random() * (maxY - minY),
                 spawnWidth,
-                spawnHeight
+                spawnHeight,
+                socket.user.id,
+                gameStats,
+                tankType
             );
         }
 
         // Deduct stake from player balance (server-authoritative)
-        // Client sends original balance (before deduction), so server deducts stake here
         if (player.balance < stake) {
             socket.emit('joinRoomError', { message: 'Insufficient balance' });
             return;
@@ -157,10 +276,23 @@ class GameServer {
         
         player.balance -= stake;
         player.balance = Math.max(0, player.balance);
+
+        // Persist balance to database
+        if (player.userId) {
+            try {
+                await userRepository.updateBalance(player.userId, player.balance);
+            } catch (err) {
+                console.error('DB updateBalance error on join:', err);
+                player.balance += stake;
+                socket.emit('joinRoomError', { message: 'Failed to update balance' });
+                return;
+            }
+        }
         
-        // Set socket reference
+        // Set socket reference and tank type
         player.socket = socket;
         player.roomStake = stake;
+        player.tankType = tankType;
 
         // Add player to room
         if (!room.players.has(socket.id)) {
@@ -184,7 +316,8 @@ class GameServer {
                 xp: player.xp,
                 xpToNextLevel: player.xpToNextLevel,
                 stats: player.stats,
-                statPoints: player.statPoints
+                statPoints: player.statPoints,
+                tankType: player.tankType || 'basic'
             }
         });
 
@@ -200,7 +333,8 @@ class GameServer {
                     angle: p.angle,
                     level: p.level,
                     health: p.health,
-                    maxHealth: p.maxHealth
+                    maxHealth: p.maxHealth,
+                    tankType: p.tankType || 'basic'
                 }
             }));
         
@@ -218,7 +352,8 @@ class GameServer {
                 angle: player.angle,
                 level: player.level,
                 health: player.health,
-                maxHealth: player.maxHealth
+                maxHealth: player.maxHealth,
+                tankType: player.tankType || 'basic'
             }
         });
 
@@ -269,8 +404,11 @@ class GameServer {
             return;
         }
 
+        const typeConfig = this.getTankTypeConfig(player.tankType, player.level);
+        const moveMult = typeConfig.movementSpeedMultiplier || 1;
+
         // Update player position (movement)
-        const moveSpeed = GameConfig.TANK.DEFAULT_SPEED + (player.stats.movementSpeed * GameConfig.TANK.MOVEMENT_SPEED_MULTIPLIER);
+        const moveSpeed = (GameConfig.TANK.DEFAULT_SPEED + (player.stats.movementSpeed * GameConfig.TANK.MOVEMENT_SPEED_MULTIPLIER)) * moveMult;
         const moveSpeedPerFrame = moveSpeed * (1/60); // Per frame at 60fps
         
         let moveX = 0;
@@ -294,10 +432,10 @@ class GameServer {
         // Clamp to canvas bounds
         const canvasWidth = player.canvasWidth || 1920;
         const canvasHeight = player.canvasHeight || 1080;
-        // Clamp player to world bounds
+        // Clamp player to world bounds (use tank-type-specific size)
         const worldWidth = GameConfig.GAME.WORLD_WIDTH;
         const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
-        const tankSize = 30;
+        const tankSize = this.getTankSize(player);
         player.x = Math.max(tankSize, Math.min(worldWidth - tankSize, player.x));
         player.y = Math.max(tankSize, Math.min(worldHeight - tankSize, player.y));
         
@@ -308,38 +446,35 @@ class GameServer {
         
         // Handle shooting
         if (isShooting) {
-            // Reload stat reduces reload time: each point reduces by RELOAD_MULTIPLIER ms
-            // Formula: BASE_RELOAD_TIME - (reload_stat * RELOAD_MULTIPLIER)
-            // Example with 7 points: 1000ms - (7 * 100) = 300ms minimum reload time
             const reloadReduction = (player.stats.reload || 0) * GameConfig.TANK.RELOAD_MULTIPLIER;
-            const reloadTime = Math.max(100, GameConfig.TANK.BASE_RELOAD_TIME - reloadReduction);
+            let reloadTime = Math.max(100, GameConfig.TANK.BASE_RELOAD_TIME - reloadReduction);
+            reloadTime *= (typeConfig.reloadMultiplier || 1);
             const currentTime = Date.now();
             
             if (currentTime - player.lastShotTime >= reloadTime) {
                 player.lastShotTime = currentTime;
                 
-                // Create bullet
-                const bullet = this.bulletManager.createBullet(player, player.angle);
-                room.bullets.set(bullet.id, bullet);
-                
-                // Broadcast bullet to room
-                this.io.to(`room_${player.roomStake}`).emit('bulletFired', {
-                    bulletId: bullet.id,
-                    ownerId: bullet.ownerId,
-                    x: bullet.x,
-                    y: bullet.y,
-                    angle: bullet.angle,
-                    speed: bullet.speed,
-                    damage: bullet.damage,
-                    size: bullet.size,
-                    lifetime: bullet.lifetime,
-                    penetration: bullet.penetration
-                });
+                const bullets = this.bulletManager.createBullets(player, player.angle);
+                for (const bullet of bullets) {
+                    room.bullets.set(bullet.id, bullet);
+                    this.io.to(`room_${player.roomStake}`).emit('bulletFired', {
+                        bulletId: bullet.id,
+                        ownerId: bullet.ownerId,
+                        x: bullet.x,
+                        y: bullet.y,
+                        angle: bullet.angle,
+                        speed: bullet.speed,
+                        damage: bullet.damage,
+                        size: bullet.size,
+                        lifetime: bullet.lifetime,
+                        penetration: bullet.penetration
+                    });
+                }
             }
         }
     }
 
-    handleStatAllocation(socket, data) {
+    async handleStatAllocation(socket, data) {
         const player = this.playerManager.getPlayer(socket.id);
         if (!player) {
             console.warn(`Stat allocation from unknown player: ${socket.id}`);
@@ -374,8 +509,21 @@ class GameServer {
             player.pendingStatAllocation = false;
         }
 
-        // Apply stat changes
-        this.playerManager.applyStatChanges(player);
+        // Apply stat changes (only maxHealth is derived on server; others used at use-time)
+        this.playerManager.applyStatChanges(player, statName);
+
+        if (player.userId) {
+            try {
+                await userRepository.updateGameStats(player.userId, {
+                    level: player.level,
+                    xp: player.xp,
+                    xpToNextLevel: player.xpToNextLevel,
+                    stats: player.stats
+                });
+            } catch (err) {
+                console.error('DB updateGameStats error (stat allocation):', err);
+            }
+        }
 
         // Send confirmation to player
         socket.emit('statAllocated', {
@@ -388,7 +536,7 @@ class GameServer {
         console.log(`✅ Stat allocated: ${player.name} allocated ${statName} (${player.stats[statName]}/${GameConfig.TANK.MAX_STAT_POINTS}), ${player.statPoints} points remaining`);
     }
 
-    handleKillSelf(socket) {
+    async handleKillSelf(socket) {
         const player = this.playerManager.getPlayer(socket.id);
         if (!player || !player.roomStake) {
             console.warn(`Kill self requested but player not in room: ${socket.id}`);
@@ -403,6 +551,13 @@ class GameServer {
         // Note: Stake was deducted in handleJoinRoom, so we just add the refund
         player.balance += refund;
         player.balance = Math.max(0, player.balance);
+        if (player.userId) {
+            try {
+                await userRepository.updateBalance(player.userId, player.balance);
+            } catch (err) {
+                console.error('DB updateBalance error on kill self:', err);
+            }
+        }
         
         // Remove player from room
         this.removePlayerFromRoom(socket.id);
@@ -426,7 +581,7 @@ class GameServer {
         console.log(`Kill self processed: Refund $${refund.toFixed(2)}, Fee $${fee.toFixed(2)}`);
     }
 
-    handleDisconnect(socket) {
+    async handleDisconnect(socket) {
         const player = this.playerManager.getPlayer(socket.id);
         if (!player) {
             console.log(`Unknown player disconnected: ${socket.id}`);
@@ -438,7 +593,18 @@ class GameServer {
         // Store room stake before removal
         const roomStake = player.roomStake;
 
-        // Remove from room first
+        // Disconnect: full refund (persist to DB)
+        if (roomStake && player.userId) {
+            player.balance += roomStake;
+            player.balance = Math.max(0, player.balance);
+            try {
+                await userRepository.updateBalance(player.userId, player.balance);
+            } catch (err) {
+                console.error('DB updateBalance error on disconnect:', err);
+            }
+        }
+
+        // Remove from room
         if (roomStake) {
             this.removePlayerFromRoom(socket.id);
 
@@ -586,10 +752,10 @@ class GameServer {
                 player.x += player.vx * deltaTime;
                 player.y += player.vy * deltaTime;
                 
-                // Clamp positions to world bounds
+                // Clamp positions to world bounds (use tank-type-specific size)
                 const worldWidth = GameConfig.GAME.WORLD_WIDTH;
                 const worldHeight = GameConfig.GAME.WORLD_HEIGHT;
-                const tankSize = 30;
+                const tankSize = this.getTankSize(player);
                 player.x = Math.max(tankSize, Math.min(worldWidth - tankSize, player.x));
                 player.y = Math.max(tankSize, Math.min(worldHeight - tankSize, player.y));
             });
@@ -650,7 +816,8 @@ class GameServer {
                     xp: p.xp,
                     xpToNextLevel: p.xpToNextLevel,
                     statPoints: p.statPoints,
-                    pendingStatAllocation: p.pendingStatAllocation
+                    pendingStatAllocation: p.pendingStatAllocation,
+                    tankType: p.tankType || 'basic'
                 }));
 
             // Get bot states
@@ -690,7 +857,7 @@ class GameServer {
 
     // ==================== Event Handlers ====================
 
-    handlePlayerDeath(killer, victim) {
+    async handlePlayerDeath(killer, victim) {
         const roomStake = victim.roomStake;
         if (!roomStake) return; // Already handled
         
@@ -707,6 +874,13 @@ class GameServer {
             
             killer.balance += reward;
             killer.balance = Math.max(0, killer.balance);
+            if (killer.userId) {
+                try {
+                    await userRepository.updateBalance(killer.userId, killer.balance);
+                } catch (err) {
+                    console.error('DB updateBalance error on kill reward:', err);
+                }
+            }
             
             // Calculate XP reward based on level difference
             let xpReward = GameConfig.XP.BASE_KILL_XP;
@@ -716,10 +890,22 @@ class GameServer {
             } else if (levelDiff < 0) {
                 xpReward = Math.max(GameConfig.XP.MIN_KILL_XP, GameConfig.XP.BASE_KILL_XP + (levelDiff * 5));
             }
-            xpReward = Math.min(xpReward, GameConfig.XP.MAX_KILL_XP);
+            xpReward = Math.max(xpReward, GameConfig.XP.MAX_KILL_XP);
             
             // Update killer XP and level
             this.playerManager.addXP(killer, xpReward);
+            if (killer.userId) {
+                try {
+                    await userRepository.updateGameStats(killer.userId, {
+                        level: killer.level,
+                        xp: killer.xp,
+                        xpToNextLevel: killer.xpToNextLevel,
+                        stats: killer.stats
+                    });
+                } catch (err) {
+                    console.error('DB updateGameStats error (killer):', err);
+                }
+            }
             
             // Notify killer (they stay in game and continue playing)
             killer.socket.emit('playerKilled', {
@@ -737,19 +923,38 @@ class GameServer {
             console.log(`💰 ${killer.name} killed ${victim.name}: +$${reward.toFixed(2)}, +${xpReward} XP`);
         }
         
-        // Victim loses full stake (stake was already deducted when joining room)
-        // No need to deduct again - stake is already lost
-        // Note: The stake was deducted in handleJoinRoom, so victim already lost it
-        
+        // Death penalty: reduce level to half, reset stats, must re-allocate (any death: killed by player or bot)
+        const oldLevel = victim.level;
+        this.playerManager.applyDeathPenalty(victim);
+        if (victim.userId) {
+            try {
+                await userRepository.updateBalance(victim.userId, victim.balance);
+                await userRepository.updateGameStats(victim.userId, {
+                    level: victim.level,
+                    xp: victim.xp,
+                    xpToNextLevel: victim.xpToNextLevel,
+                    stats: victim.stats
+                });
+            } catch (err) {
+                console.error('DB update error on victim death:', err);
+            }
+        }
+
         // Remove victim from room FIRST (before notifications)
         this.removePlayerFromRoom(victim.id);
         
-        // Notify victim directly (they died and lost stake - must exit room)
+        // Notify victim (lost stake, level halved, must re-allocate stats on next join)
         victim.socket.emit('playerDied', {
             playerId: victim.id,
             killerId: killer && killer.id !== victim.id ? killer.id : null,
             lostStake: victimStake,
-            newBalance: victim.balance  // Send current balance (stake already deducted)
+            newBalance: victim.balance,
+            deathPenalty: true,
+            newLevel: victim.level,
+            oldLevel,
+            stats: victim.stats,
+            statPoints: victim.statPoints,
+            pendingStatAllocation: victim.pendingStatAllocation
         });
         
         // Broadcast player left to room (so other players know victim left)
@@ -766,9 +971,21 @@ class GameServer {
         console.log(`💀 ${victim.name} was killed by ${killer && killer.id !== victim.id ? killer.name : 'unknown'} - removed from room`);
     }
 
-    handleBotKilled(player, bot) {
+    async handleBotKilled(player, bot) {
         // Give XP to player
         this.playerManager.addXP(player, bot.xpReward);
+        if (player.userId) {
+            try {
+                await userRepository.updateGameStats(player.userId, {
+                    level: player.level,
+                    xp: player.xp,
+                    xpToNextLevel: player.xpToNextLevel,
+                    stats: player.stats
+                });
+            } catch (err) {
+                console.error('DB updateGameStats error (bot kill):', err);
+            }
+        }
         
         // Notify player
         player.socket.emit('botKilled', {

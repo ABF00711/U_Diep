@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>U_Diep - Skill-Based PvP Tank Battle</title>
     <link rel="stylesheet" href="css/style.css">
 </head>
@@ -15,24 +15,72 @@
         <div id="uiOverlay">
             <!-- HUD -->
             <div id="hud">
-                <div id="balance">Balance: $100</div>
-                <div id="level">Level: 1</div>
-                <div id="health">Health: 100/100</div>
-                <div id="xp">XP: 0/100</div>
-                <!-- Kill Button (moved to bottom of HUD) -->
+                <div id="hudStats">
+                    <div id="balance">Balance: $100</div>
+                    <div id="level">Level: 1</div>
+                    <div id="health">Health: 100/100</div>
+                    <div id="xp">XP: 0/100</div>
+                </div>
+                <!-- Tank selection (visible at level 5+) -->
+                <div id="hudTankSelection" class="hidden">
+                    <label class="hud-tank-label">Tank</label>
+                    <div class="hud-tank-btns">
+                        <button type="button" class="hud-tank-btn active" data-tank="basic" title="Basic">Basic</button>
+                        <button type="button" class="hud-tank-btn" data-tank="sniper" title="Sniper">Sniper</button>
+                        <button type="button" class="hud-tank-btn" data-tank="gun" title="Gun">Gun</button>
+                        <button type="button" class="hud-tank-btn" data-tank="heavy" title="Heavy">Heavy</button>
+                    </div>
+                </div>
                 <button id="killButton" class="hidden">Kill Self</button>
+            </div>
+            
+            <!-- Auth (Login / Register) - shown when not logged in -->
+            <div id="authScreen" class="hidden">
+                <h2>U_Diep</h2>
+                <p class="auth-subtitle">Log in or register to play. Funding will be available in a later version.</p>
+                <div class="auth-tabs">
+                    <button type="button" id="authTabLogin" class="auth-tab active">Login</button>
+                    <button type="button" id="authTabRegister" class="auth-tab">Register</button>
+                </div>
+                <form id="authForm" class="auth-form">
+                    <div id="authEmailGroup" class="auth-group">
+                        <label for="authEmail">Email</label>
+                        <input type="email" id="authEmail" placeholder="your@email.com" autocomplete="email">
+                    </div>
+                    <div id="authUsernameGroup" class="auth-group">
+                        <label for="authUsername">Username</label>
+                        <input type="text" id="authUsername" placeholder="Username (for login: use email or username)" autocomplete="username" maxlength="64">
+                    </div>
+                    <div class="auth-group">
+                        <label for="authPassword">Password</label>
+                        <input type="password" id="authPassword" placeholder="Password" autocomplete="current-password" minlength="6">
+                    </div>
+                    <p id="authError" class="auth-error hidden"></p>
+                    <button type="submit" id="authSubmit">Login</button>
+                </form>
             </div>
             
             <!-- Room Selection (Hidden initially) -->
             <div id="roomSelection" class="hidden">
                 <h2>Select Room</h2>
+                <p id="welcomeUser" class="welcome-user"></p>
                 <button class="room-btn" data-stake="1">$1 Room</button>
                 <button class="room-btn" data-stake="5">$5 Room</button>
                 <button class="room-btn" data-stake="10">$10 Room</button>
+                <button type="button" id="logoutButton" class="logout-btn">Log out</button>
             </div>
             
             <!-- Minimap -->
             <canvas id="minimap" class="hidden"></canvas>
+        </div>
+        
+        <!-- Announcement alert (top center, shown when server has announcement) -->
+        <div id="announcementModal" class="announcement-alert hidden">
+            <div class="announcement-content">
+                <span id="announcementTitle" class="announcement-title"></span>
+                <span id="announcementBody" class="announcement-body"></span>
+                <button type="button" id="announcementOk" class="announcement-ok">OK</button>
+            </div>
         </div>
         
         <!-- Loading Screen -->

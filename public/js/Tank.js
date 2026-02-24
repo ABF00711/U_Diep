@@ -1,14 +1,31 @@
 // Tank Class
 
+function getTankTier(level) {
+    return GameConfig.getTankTier ? GameConfig.getTankTier(level || 1) : 0;
+}
+
+function getCannonsCount(tankType, level) {
+    const types = GameConfig.TANK_TYPES || {};
+    const cfg = types[tankType || 'basic'] || types.basic || {};
+    const tier = getTankTier(level);
+    const v = cfg.cannonsCount;
+    return typeof v === 'function' ? v(tier) : (v ?? 1);
+}
+
 class Tank {
     constructor(x, y, options = {}) {
+        const tankType = options.tankType || 'basic';
+        const level = options.level || 1;
+        const typeConfig = (GameConfig.TANK_TYPES && GameConfig.TANK_TYPES[tankType]) || {};
+        this.tankType = tankType;
+        this.level = level;
         this.x = x;
         this.y = y;
         this.angle = options.angle || 0;
-        this.size = options.size || GameConfig.TANK.DEFAULT_SIZE;
-        this.barrelLength = options.barrelLength || GameConfig.TANK.DEFAULT_BARREL_LENGTH;
-        this.barrelWidth = options.barrelWidth || GameConfig.TANK.DEFAULT_BARREL_WIDTH;
-        this.color = options.color || GameConfig.COLORS.PLAYER_TANK;
+        this.size = options.size || typeConfig.size || GameConfig.TANK.DEFAULT_SIZE;
+        this.barrelLength = options.barrelLength || typeConfig.barrelLength || GameConfig.TANK.DEFAULT_BARREL_LENGTH;
+        this.barrelWidth = options.barrelWidth || typeConfig.barrelWidth || GameConfig.TANK.DEFAULT_BARREL_WIDTH;
+        this.color = options.color || typeConfig.color || GameConfig.COLORS.PLAYER_TANK;
         this.health = options.health || GameConfig.TANK.DEFAULT_HEALTH;
         this.maxHealth = options.maxHealth || GameConfig.TANK.DEFAULT_MAX_HEALTH;
         this.level = options.level || 1;
@@ -244,26 +261,62 @@ class Tank {
         const renderY = this.renderY !== undefined ? this.renderY : this.y;
         ctx.translate(renderX, renderY);
 
-        // Draw tank body (circle - no gradient, solid color)
+        // Draw tank body (circle)
         ctx.fillStyle = this.color;
         ctx.beginPath();
         ctx.arc(0, 0, this.size, 0, Math.PI * 2);
         ctx.fill();
-        
-        // Body outline
         ctx.strokeStyle = darkenColor(this.color, 0.5);
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        // Draw barrel (thicker, no gradient, solid darker color)
-        ctx.rotate(this.angle);
-        ctx.fillStyle = darkenColor(this.color, 0.4); // Solid darker color
-        ctx.fillRect(this.size, -this.barrelWidth / 2, this.barrelLength, this.barrelWidth);
-        
-        // Barrel outline
-        ctx.strokeStyle = darkenColor(this.color, 0.7);
-        ctx.lineWidth = 2;
-        ctx.strokeRect(this.size, -this.barrelWidth / 2, this.barrelLength, this.barrelWidth);
+        // Draw barrel(s) - Gun has multiple cannons around body
+        const cannons = getCannonsCount(this.tankType, this.level);
+        const barrelColor = darkenColor(this.color, 0.4);
+        const barrelStroke = darkenColor(this.color, 0.7);
+
+        if (cannons === 1) {
+            ctx.rotate(this.angle);
+            ctx.fillStyle = barrelColor;
+            ctx.fillRect(this.size, -this.barrelWidth / 2, this.barrelLength, this.barrelWidth);
+            ctx.strokeStyle = barrelStroke;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(this.size, -this.barrelWidth / 2, this.barrelLength, this.barrelWidth);
+        } else if (cannons === 2 || cannons === 3) {
+            // 2 or 3 cannons: front only (forward arc)
+            const coneRad = (60 * Math.PI) / 180;
+            for (let i = 0; i < cannons; i++) {
+                ctx.save();
+                const t = cannons === 1 ? 0.5 : i / Math.max(1, cannons - 1);
+                const placementAngle = this.angle - coneRad / 2 + t * coneRad;
+                const bx = Math.cos(placementAngle) * this.size;
+                const by = Math.sin(placementAngle) * this.size;
+                ctx.translate(bx, by);
+                ctx.rotate(this.angle);
+                ctx.fillStyle = barrelColor;
+                ctx.fillRect(0, -this.barrelWidth / 2, this.barrelLength, this.barrelWidth);
+                ctx.strokeStyle = barrelStroke;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(0, -this.barrelWidth / 2, this.barrelLength, this.barrelWidth);
+                ctx.restore();
+            }
+        } else {
+            // 4+ cannons: distributed around body, rotate with tank aim
+            for (let i = 0; i < cannons; i++) {
+                ctx.save();
+                const placementAngle = this.angle + (2 * Math.PI * i) / cannons;
+                const bx = Math.cos(placementAngle) * this.size;
+                const by = Math.sin(placementAngle) * this.size;
+                ctx.translate(bx, by);
+                ctx.rotate(placementAngle);
+                ctx.fillStyle = barrelColor;
+                ctx.fillRect(0, -this.barrelWidth / 2, this.barrelLength, this.barrelWidth);
+                ctx.strokeStyle = barrelStroke;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(0, -this.barrelWidth / 2, this.barrelLength, this.barrelWidth);
+                ctx.restore();
+            }
+        }
 
         ctx.restore();
 
