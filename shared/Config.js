@@ -88,7 +88,7 @@ const GameConfig = {
         },
         heavy: {
             name: 'Heavy',
-            description: 'Huge bullets, high damage. Less movement, reload, range.',
+            description: 'Huge bullets, high damage. Less movement, reload.',
             size: 32,
             barrelLength: 18,
             barrelWidth: 12,
@@ -97,13 +97,13 @@ const GameConfig = {
             viewRangeMultiplier: 1,
             movementSpeedMultiplier: (tier) => Math.max(0.4, 1 - tier * 0.1),   // 0.9 to 0.4
             bulletSpeedMultiplier: 1,
-            bulletDamageMultiplier: (tier) => 1 + tier * 0.15,     // 1.15 to 1.9
-            bulletLifetimeMultiplier: (tier) => Math.max(0.5, 1 - tier * 0.08),  // range
-            bulletSizeMultiplier: (tier) => 1 + tier * 0.12,      // 1.12 to 1.72
-            reloadMultiplier: (tier) => 1 + tier * 0.15,          // slower: 1.15 to 1.9
+            bulletDamageMultiplier: (tier) => 1 + tier * 0.25,     // 1.25 to 2.5 (higher damage)
+            bulletLifetimeMultiplier: (tier) => 1 + tier * 0.12,   // 1.12 to 1.72 (increased range)
+            bulletSizeMultiplier: (tier) => 1 + tier * 0.22,       // 1.22 to 2.32 (bigger bullets)
+            reloadMultiplier: (tier) => 1 + tier * 0.08,           // 1.08 to 1.48 (slightly faster than before)
             penetrationMultiplier: 1,
-            bodyDamageMultiplier: 1,
-            maxHealthMultiplier: 1
+            bodyDamageMultiplier: (tier) => 1 + tier * 0.18,      // 1.18 to 2.08
+            maxHealthMultiplier: (tier) => 1 + tier * 0.2          // 1.2 to 2.2 (scales with level)
         }
     },
 
