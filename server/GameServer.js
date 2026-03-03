@@ -801,7 +801,10 @@ class GameServer {
     }
 
     broadcastGameState() {
-        // Broadcast player positions and states to each room
+        const interestRadius = GameConfig.BOT.INTEREST_RADIUS || 2500;
+        const deltaThreshold = GameConfig.BOT.DELTA_THRESHOLD ?? 2;
+        const fullSyncIntervalMs = (GameConfig.BOT.FULL_SYNC_INTERVAL ?? 5) * 1000;
+
         this.roomManager.getAllRooms().forEach((room, stake) => {
             const players = Array.from(room.players.values())
                 .filter(p => !p.isDead)
@@ -820,10 +823,46 @@ class GameServer {
                     tankType: p.tankType || 'basic'
                 }));
 
-            // Get bot states
-            const bots = Array.from(room.bots.values())
-                .filter(b => !b.isDead)
+            const bullets = Array.from(room.bullets.values())
                 .map(b => ({
+                    bulletId: b.id,
+                    x: b.x,
+                    y: b.y,
+                    angle: b.angle,
+                    penetration: b.penetration
+                }));
+
+            const now = Date.now();
+            const doFullSync = !room.lastBotFullSyncTime || (now - room.lastBotFullSyncTime) >= fullSyncIntervalMs;
+            if (doFullSync) room.lastBotFullSyncTime = now;
+
+            const distSq = (ax, ay, bx, by) => (bx - ax) ** 2 + (by - ay) ** 2;
+            const hasChanged = (b) => {
+                if (b.prevX === undefined || b.prevY === undefined) return true;
+                if (Math.abs(b.x - b.prevX) > deltaThreshold || Math.abs(b.y - b.prevY) > deltaThreshold) return true;
+                if (b.health !== b.prevHealth) return true;
+                return false;
+            };
+
+            room.players.forEach((player) => {
+                if (player.isDead || !player.socket) return;
+                const px = player.x;
+                const py = player.y;
+                const r2 = interestRadius * interestRadius;
+
+                const nearbyBots = Array.from(room.bots.values())
+                    .filter(b => !b.isDead && distSq(px, py, b.x, b.y) <= r2);
+                const nearbyBotIds = new Set(nearbyBots.map(b => b.id));
+
+                const botsToSend = doFullSync
+                    ? nearbyBots
+                    : nearbyBots.filter(hasChanged);
+
+                const removedBotIds = doFullSync ? [] : [...(player.lastNearbyBotIds || [])]
+                    .filter(id => !nearbyBotIds.has(id));
+                player.lastNearbyBotIds = nearbyBotIds;
+
+                const bots = botsToSend.map(b => ({
                     botId: b.id,
                     type: b.type,
                     x: b.x,
@@ -834,24 +873,25 @@ class GameServer {
                     rotation: b.rotation
                 }));
 
-            // Get bullet states (so clients can sync and remove bullets that no longer exist)
-            const bullets = Array.from(room.bullets.values())
-                .map(b => ({
-                    bulletId: b.id,
-                    x: b.x,
-                    y: b.y,
-                    angle: b.angle,
-                    penetration: b.penetration
-                }));
+                if (players.length > 0 || bots.length > 0 || bullets.length > 0 || removedBotIds.length > 0) {
+                    player.socket.emit('gameState', {
+                        players,
+                        bots,
+                        bullets,
+                        removedBotIds,
+                        timestamp: now,
+                        fullSync: doFullSync
+                    });
+                }
+            });
 
-            if (players.length > 0 || bots.length > 0 || bullets.length > 0) {
-                this.io.to(`room_${stake}`).emit('gameState', {
-                    players: players,
-                    bots: bots,
-                    bullets: bullets,
-                    timestamp: Date.now()
-                });
-            }
+            room.bots.forEach((b) => {
+                if (!b.isDead) {
+                    b.prevX = b.x;
+                    b.prevY = b.y;
+                    b.prevHealth = b.health;
+                }
+            });
         });
     }
 

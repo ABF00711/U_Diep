@@ -17,11 +17,13 @@ class BotManager {
             const type = Math.random() < BOT_CONFIG.RECTANGLE_SPAWN_CHANCE ? 'rectangle' : 'triangle';
             const botConfig = type === 'triangle' ? BOT_CONFIG.TRIANGLE : BOT_CONFIG.RECTANGLE;
             
+            const bx = margin + Math.random() * (worldWidth - margin * 2);
+            const by = margin + Math.random() * (worldHeight - margin * 2);
             const bot = {
                 id: `bot_${room.stake}_${Date.now()}_${Math.random()}`,
                 type: type,
-                x: margin + Math.random() * (worldWidth - margin * 2),
-                y: margin + Math.random() * (worldHeight - margin * 2),
+                x: bx,
+                y: by,
                 health: botConfig.HEALTH,
                 maxHealth: botConfig.MAX_HEALTH,
                 bodyDamage: botConfig.BODY_DAMAGE,
@@ -40,7 +42,10 @@ class BotManager {
                 deathTime: 0,
                 respawnTime: BOT_CONFIG.DEFAULT_RESPAWN_TIME,
                 damageCooldown: BOT_CONFIG.DEFAULT_DAMAGE_COOLDOWN,
-                lastDamageTime: {} // Map<playerId, timestamp>
+                lastDamageTime: {}, // Map<playerId, timestamp>
+                prevX: bx,
+                prevY: by,
+                prevHealth: botConfig.HEALTH
             };
             
             room.bots.set(bot.id, bot);
@@ -78,6 +83,9 @@ class BotManager {
                     bot.rotationSpeed = (Math.random() - 0.5) * 0.05;
                     bot.vx = 0;
                     bot.vy = 0;
+                    bot.prevX = bot.x;
+                    bot.prevY = bot.y;
+                    bot.prevHealth = bot.health;
                 }
                 return;
             }

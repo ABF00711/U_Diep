@@ -164,7 +164,10 @@ const GameConfig = {
         DIRECTION_CHANGE_MAX: 5,           // seconds
         RECTANGLE_SPAWN_CHANCE: 0.7,       // 70% chance to spawn rectangle
         SQUIRT_FORCE: 150,                 // Force applied when tank pushes pellet (pixels/second)
-        SQUIRT_DAMPENING: 0.95             // Velocity dampening per frame (0-1, lower = more friction)
+        SQUIRT_DAMPENING: 0.95,            // Velocity dampening per frame (0-1, lower = more friction)
+        INTEREST_RADIUS: 2500,             // Only send bots within this pixel radius of each player (reduces bandwidth)
+        DELTA_THRESHOLD: 2,                // Min movement (px) or health change to include bot in update
+        FULL_SYNC_INTERVAL: 0.05              // Send full nearby bot state every N seconds (prevents delta drift)
     },
 
     // Game Settings
