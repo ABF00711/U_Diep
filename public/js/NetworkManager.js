@@ -372,9 +372,9 @@ class NetworkManager {
             this.syncServerBullets(data.bullets);
         }
         
-        // Update bots from server (server is authoritative)
-        if (data.bots) {
-            this.updateServerBots(data.bots);
+        // Update bots from server (interest + delta: fullSync=replace, else merge)
+        if (data.bots || data.removedBotIds) {
+            this.updateServerBots(data.bots || [], data.fullSync, data.removedBotIds || []);
         }
         
         // Update server players' positions and health (server is authoritative)
@@ -714,46 +714,47 @@ class NetworkManager {
         });
     }
 
-    updateServerBots(serverBots) {
-        // Create a map of server bot IDs for quick lookup
-        const serverBotIds = new Set(serverBots.map(b => b.botId));
-        
-        // Remove bots that no longer exist on server
-        this.game.bots = this.game.bots.filter(bot => {
-            if (bot.serverBotId && !serverBotIds.has(bot.serverBotId)) {
-                return false; // Remove bot that's not on server anymore
-            }
-            return true;
-        });
-        
-        // Update or create bots from server data
+    updateServerBots(serverBots, fullSync = true, removedBotIds = []) {
+        const serverBotIds = new Set(serverBots.map(b => b.botId ?? b.b));
+        if (fullSync) {
+            this.game.bots = this.game.bots.filter(bot => {
+                if (bot.serverBotId && !serverBotIds.has(bot.serverBotId)) return false;
+                return true;
+            });
+        } else {
+            const removedSet = new Set(removedBotIds);
+            this.game.bots = this.game.bots.filter(bot => {
+                if (bot.serverBotId && removedSet.has(bot.serverBotId)) return false;
+                return true;
+            });
+        }
+        const getBotId = (b) => b.botId ?? b.b;
         serverBots.forEach(botData => {
-            let bot = this.game.bots.find(b => b.serverBotId === botData.botId);
+            const bid = getBotId(botData);
+            let bot = this.game.bots.find(b => b.serverBotId === bid);
             
             if (!bot) {
-                // Create new bot from server data
                 bot = new Bot(
                     botData.x,
                     botData.y,
-                    botData.type,
+                    botData.t ?? botData.type,
                     {
-                        id: botData.botId,
-                        serverBotId: botData.botId,
-                        health: botData.health,
-                        maxHealth: botData.maxHealth,
-                        size: botData.size
+                        id: bid,
+                        serverBotId: bid,
+                        health: botData.h ?? botData.health,
+                        maxHealth: botData.mh ?? botData.maxHealth,
+                        size: botData.s ?? botData.size
                     }
                 );
-                bot.rotation = botData.rotation || 0;
+                bot.rotation = botData.r ?? botData.rotation ?? 0;
                 bot.rotationSpeed = (Math.random() - 0.5) * 0.05; // Random rotation speed for visual effect
                 this.game.bots.push(bot);
             } else {
-                // Update existing bot (server is authoritative)
                 bot.x = botData.x;
                 bot.y = botData.y;
-                bot.health = botData.health;
-                bot.maxHealth = botData.maxHealth;
-                bot.rotation = botData.rotation;
+                bot.health = botData.h ?? botData.health;
+                bot.maxHealth = botData.mh ?? botData.maxHealth;
+                bot.rotation = botData.r ?? botData.rotation;
                 bot.isDead = false; // Server only sends alive bots
             }
         });
