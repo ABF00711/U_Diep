@@ -87,36 +87,29 @@ class BulletManager {
      */
     updateBullets(room, deltaTime) {
         const bulletsToRemove = [];
-        const maxX = 5000; // World bounds
-        const maxY = 5000;
+        const worldWidth = GameConfig.GAME.WORLD_WIDTH || 5000;
+        const worldHeight = GameConfig.GAME.WORLD_HEIGHT || 5000;
         
         room.bullets.forEach((bullet, bulletId) => {
-            // Skip bullets that have no penetration left (they should have been removed, but check anyway)
             if (bullet.penetration <= 0) {
                 bulletsToRemove.push(bulletId);
                 return;
             }
             
-            // Update bullet position
             bullet.x += Math.cos(bullet.angle) * bullet.speed * deltaTime;
             bullet.y += Math.sin(bullet.angle) * bullet.speed * deltaTime;
-            bullet.age += deltaTime * 1000; // Convert to milliseconds
-            
-            // Clear hit targets from previous frame (allows bullet to hit same target in different frames if penetration allows)
+            bullet.age += deltaTime * 1000;
             bullet.hitTargets.clear();
             
-            // Check if bullet expired or out of bounds
             if (bullet.age >= bullet.lifetime || 
-                bullet.x < -bullet.size || bullet.x > maxX + bullet.size ||
-                bullet.y < -bullet.size || bullet.y > maxY + bullet.size) {
+                bullet.x < -bullet.size || bullet.x > worldWidth + bullet.size ||
+                bullet.y < -bullet.size || bullet.y > worldHeight + bullet.size) {
                 bulletsToRemove.push(bulletId);
             }
         });
         
-        // Remove expired bullets
-        bulletsToRemove.forEach(bulletId => {
-            room.bullets.delete(bulletId);
-        });
+        bulletsToRemove.forEach(bulletId => room.bullets.delete(bulletId));
+        return bulletsToRemove;
     }
 }
 
