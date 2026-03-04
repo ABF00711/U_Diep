@@ -137,6 +137,10 @@ class NetworkManager {
             this.handleBulletFired(data);
         });
 
+        this.socket.on('bulletRemoved', (data) => {
+            this.handleBulletRemoved(data);
+        });
+
         // Player events
         this.socket.on('statAllocated', (data) => {
             // Sync stats from server (online-only: maxHealth and other derived values come from gameState)
@@ -362,12 +366,6 @@ class NetworkManager {
     }
 
     handleGameState(data) {
-        // Debug: Log game state updates (occasionally)
-        if (Math.random() < 0.01) { // 1% chance
-            console.log('📡 Game state update:', data.players.length, 'players', data.bots?.length || 0, 'bots', data.bullets?.length || 0, 'bullets');
-        }
-        
-        // Sync bullets from server (server is authoritative - remove bullets that don't exist on server)
         if (data.bullets) {
             this.syncServerBullets(data.bullets);
         }
@@ -468,12 +466,6 @@ class NetworkManager {
     }
 
     handleBulletFired(data) {
-        // Create bullet from server data (server is authoritative for all bullets)
-        // Debug: Log occasionally (10% chance)
-        if (Math.random() < 0.1) {
-            console.log('🔫 Bullet fired:', data.bulletId, 'by', data.ownerId);
-        }
-
         // Check if bullet already exists (prevent duplicates)
         const existingBullet = this.game.bullets.find(b => b.id === data.bulletId);
         if (existingBullet) {
@@ -510,14 +502,11 @@ class NetworkManager {
         bullet.id = data.bulletId;
 
         this.game.bullets.push(bullet);
-        
-        // Debug: Log if owner not found (for debugging, but don't prevent bullet creation)
-        if (data.ownerId !== this.playerId && !this.serverPlayers.has(data.ownerId) && !this.game.playerTank?.id === data.ownerId) {
-            // Owner might have disconnected - this is okay, bullet will still render
-            if (Math.random() < 0.1) { // Only log occasionally to avoid spam
-                console.log('ℹ️ Bullet from disconnected player:', data.ownerId, '- bullet will still render');
-            }
-        }
+    }
+
+    handleBulletRemoved(data) {
+        const ids = new Set(data.bulletIds || []);
+        this.game.bullets = this.game.bullets.filter(b => !b.id || !ids.has(b.id));
     }
 
     handleKilledSelf(data) {

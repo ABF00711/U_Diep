@@ -164,10 +164,8 @@ class CollisionManager {
             });
         });
         
-        // Remove bullets that ran out of penetration
-        bulletsToRemove.forEach(bulletId => {
-            room.bullets.delete(bulletId);
-        });
+        bulletsToRemove.forEach(bulletId => room.bullets.delete(bulletId));
+        return bulletsToRemove;
     }
 
     /**
@@ -322,10 +320,8 @@ class CollisionManager {
             });
         });
         
-        // Remove bullets that ran out of penetration
-        bulletsToRemove.forEach(bulletId => {
-            room.bullets.delete(bulletId);
-        });
+        bulletsToRemove.forEach(bulletId => room.bullets.delete(bulletId));
+        return bulletsToRemove;
     }
 }
 

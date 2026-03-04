@@ -763,13 +763,10 @@ class GameServer {
 
         // Update bullets, bots, and check collisions for each room
         this.roomManager.getAllRooms().forEach((room, stake) => {
-            // Update bots
             this.botManager.updateBots(room, deltaTime);
             
-            // Update bullets
-            this.bulletManager.updateBullets(room, deltaTime);
+            const removedFromUpdate = this.bulletManager.updateBullets(room, deltaTime);
             
-            // Check collisions (order matters: tank-tank first, then bot-tank, then bullet collisions)
             this.collisionManager.checkTankTankCollisions(
                 room,
                 this.playerManager,
@@ -783,20 +780,22 @@ class GameServer {
                 (player, bot) => this.handleBotKilled(player, bot)
             );
             
-            // Check bullet collisions (bullets can hit both players and bots)
-            // Both checks share the same bullet set, so bullets removed in one check won't be checked in the other
-            this.collisionManager.checkBulletPlayerCollisions(
+            const removedFromPlayer = this.collisionManager.checkBulletPlayerCollisions(
                 room,
                 this.playerManager,
                 (attacker, target) => this.handlePlayerDeath(attacker, target)
             );
             
-            // Check bot collisions (bullets that still have penetration can hit bots)
-            this.collisionManager.checkBulletBotCollisions(
+            const removedFromBot = this.collisionManager.checkBulletBotCollisions(
                 room,
                 this.playerManager,
                 (attacker, bot) => this.handleBotKilled(attacker, bot)
             );
+            
+            const allRemovedBullets = [...removedFromUpdate, ...removedFromPlayer, ...removedFromBot];
+            if (allRemovedBullets.length > 0) {
+                this.io.to(`room_${stake}`).emit('bulletRemoved', { bulletIds: allRemovedBullets });
+            }
         });
     }
 
@@ -821,15 +820,6 @@ class GameServer {
                     statPoints: p.statPoints,
                     pendingStatAllocation: p.pendingStatAllocation,
                     tankType: p.tankType || 'basic'
-                }));
-
-            const bullets = Array.from(room.bullets.values())
-                .map(b => ({
-                    bulletId: b.id,
-                    x: b.x,
-                    y: b.y,
-                    angle: b.angle,
-                    penetration: b.penetration
                 }));
 
             const now = Date.now();
@@ -873,11 +863,10 @@ class GameServer {
                     rotation: b.rotation
                 }));
 
-                if (players.length > 0 || bots.length > 0 || bullets.length > 0 || removedBotIds.length > 0) {
+                if (players.length > 0 || bots.length > 0 || removedBotIds.length > 0) {
                     player.socket.emit('gameState', {
                         players,
                         bots,
-                        bullets,
                         removedBotIds,
                         timestamp: now,
                         fullSync: doFullSync
