@@ -43,10 +43,6 @@ class GameServer {
                 await this.handleStatAllocation(socket, data);
             });
 
-            socket.on('killSelf', async () => {
-                await this.handleKillSelf(socket);
-            });
-
             socket.on('disconnect', async () => {
                 await this.handleDisconnect(socket);
             });
@@ -534,51 +530,6 @@ class GameServer {
         });
         
         console.log(`✅ Stat allocated: ${player.name} allocated ${statName} (${player.stats[statName]}/${GameConfig.TANK.MAX_STAT_POINTS}), ${player.statPoints} points remaining`);
-    }
-
-    async handleKillSelf(socket) {
-        const player = this.playerManager.getPlayer(socket.id);
-        if (!player || !player.roomStake) {
-            console.warn(`Kill self requested but player not in room: ${socket.id}`);
-            return;
-        }
-
-        const stake = player.roomStake;
-        const refund = stake * GameConfig.ECONOMY.KILL_BUTTON_REFUND_PERCENT;
-        const fee = stake * GameConfig.ECONOMY.KILL_BUTTON_FEE_PERCENT;
-        
-        // Refund 90% of stake (stake was already deducted when joining room)
-        // Note: Stake was deducted in handleJoinRoom, so we just add the refund
-        player.balance += refund;
-        player.balance = Math.max(0, player.balance);
-        if (player.userId) {
-            try {
-                await userRepository.updateBalance(player.userId, player.balance);
-            } catch (err) {
-                console.error('DB updateBalance error on kill self:', err);
-            }
-        }
-        
-        // Remove player from room
-        this.removePlayerFromRoom(socket.id);
-        
-        // Notify player
-        socket.emit('killedSelf', {
-            refund: refund,
-            fee: fee,
-            newBalance: player.balance
-        });
-        
-        // Broadcast to room
-        this.io.to(`room_${stake}`).emit('playerLeft', {
-            playerId: socket.id,
-            reason: 'killed_self'
-        });
-        
-        // Broadcast updated room counts
-        this.broadcastRoomCounts();
-        
-        console.log(`Kill self processed: Refund $${refund.toFixed(2)}, Fee $${fee.toFixed(2)}`);
     }
 
     async handleDisconnect(socket) {
