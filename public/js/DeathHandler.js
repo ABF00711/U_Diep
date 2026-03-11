@@ -22,26 +22,5 @@ class DeathHandler {
         console.log(`Player died (${reason})! Lost entire wager: $${lostWager}`);
         this.game.showMessage(`You died! Lost $${lostWager}`, GameConfig.UI.MESSAGE_DURATION_LONG);
         this.game.updateBalanceDisplay();
-        
-        // Exit game
-        this.game.killSelf();
-    }
-
-    /**
-     * Handle kill button exit (10% fee, 90% refund)
-     */
-    handleKillButtonExit() {
-        if (!this.game.economy.isInMatch()) {
-            return;
-        }
-
-        const refund = this.game.economy.refundKillButton();
-        console.log(`Kill button: Refunded $${refund.refunded.toFixed(2)}, Fee: $${refund.fee.toFixed(2)}`);
-        
-        this.game.showMessage(
-            `Exited match. Refunded: $${refund.refunded.toFixed(2)} (Fee: $${refund.fee.toFixed(2)})`,
-            GameConfig.UI.MESSAGE_DURATION_LONG
-        );
-        this.game.updateBalanceDisplay();
     }
 }

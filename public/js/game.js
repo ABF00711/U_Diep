@@ -147,12 +147,6 @@ class Game {
             });
         });
 
-        // Kill button
-        const killButton = document.getElementById('killButton');
-        killButton.addEventListener('click', () => {
-            this.killSelf();
-        });
-
         // Logout button
         const logoutBtn = document.getElementById('logoutButton');
         if (logoutBtn) {
@@ -354,7 +348,6 @@ class Game {
 
     hideRoomSelection() {
         document.getElementById('roomSelection').classList.add('hidden');
-        document.getElementById('killButton').classList.remove('hidden');
         document.getElementById('minimap').classList.remove('hidden');
         this.state = 'playing';
     }
@@ -376,7 +369,7 @@ class Game {
         
         // Check if already in a match (allow rejoining if not connected)
         if (this.economy.isInMatch() && this.networkManager.isConnected() && this.networkManager.playerId) {
-            alert('You are already in a match! Use Kill Self button to exit first.');
+            alert('You are already in a match! Stay until you die or disconnect to leave.');
             return;
         }
         
@@ -560,19 +553,6 @@ class Game {
         }
     }
 
-    killSelf() {
-        if (this.state === 'playing' && this.playerTank) {
-            console.log('🔴 Kill self requested...');
-            
-            // Send to server and wait for confirmation
-            // Server will handle cleanup and send 'killedSelf' event
-            this.networkManager.sendKillSelf();
-            // Don't clean up here - wait for server confirmation via handleKilledSelf
-        } else {
-            console.warn('Cannot kill self: not in playing state or no player tank');
-        }
-    }
-    
     showMessage(text, duration = GameConfig.UI.MESSAGE_DURATION) {
         // Create or get message element
         let messageEl = document.getElementById('gameMessage');

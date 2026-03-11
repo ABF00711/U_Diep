@@ -157,10 +157,6 @@ class NetworkManager {
             }
         });
 
-        this.socket.on('killedSelf', (data) => {
-            this.handleKilledSelf(data);
-        });
-
         this.socket.on('disconnected', (data) => {
             this.handleDisconnected(data);
         });
@@ -253,21 +249,6 @@ class NetworkManager {
         this.socket.emit('statAllocation', {
             statName: statName
         });
-    }
-
-    sendKillSelf() {
-        if (!this.connected) {
-            console.error('Cannot send kill self: not connected to server');
-            return;
-        }
-        
-        if (!this.playerId) {
-            console.warn('Cannot send kill self: no player ID');
-            return;
-        }
-
-        console.log('📤 Sending kill self request to server...');
-        this.socket.emit('killSelf');
     }
 
     sendPlayerDamage(targetId, damage, damageType = 'bullet') {
@@ -509,33 +490,6 @@ class NetworkManager {
         this.game.bullets = this.game.bullets.filter(b => !b.id || !ids.has(b.id));
     }
 
-    handleKilledSelf(data) {
-        console.log('✅ Kill self confirmed by server:', data);
-
-        // Update balance
-        this.game.economy.setBalance(data.newBalance);
-        this.game.economy.currentWager = 0; // Clear wager
-        this.game.updateBalanceDisplay();
-
-        // Show message
-        this.game.showMessage(
-            `Exited match. Refunded: $${data.refund.toFixed(2)} (Fee: $${data.fee.toFixed(2)})`,
-            GameConfig.UI.MESSAGE_DURATION_LONG
-        );
-
-        // Clean up game state (remove enemy tanks, clear bullets, etc.)
-        this.cleanupGameState();
-
-        // Exit to menu
-        this.exitToMenu();
-
-        // Clear network state
-        this.playerId = null;
-        this.roomStake = null;
-        
-        console.log('✅ Kill self complete - returned to menu');
-    }
-
     handleDisconnected(data) {
         // Note: This handler may not be called if socket is already disconnected
         // The socket 'disconnect' event handler below handles this case
@@ -605,12 +559,6 @@ class NetworkManager {
         // Exit game
         this.game.playerTank = null;
         this.game.state = 'menu';
-        
-        // Hide kill button
-        const killButton = document.getElementById('killButton');
-        if (killButton) {
-            killButton.classList.add('hidden');
-        }
         
         // Show room selection
         this.game.showRoomSelection();
