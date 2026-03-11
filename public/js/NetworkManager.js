@@ -141,6 +141,10 @@ class NetworkManager {
             this.handleBulletRemoved(data);
         });
 
+        this.socket.on('exitedMatch', (data) => {
+            this.handleExitedMatch(data);
+        });
+
         // Player events
         this.socket.on('statAllocated', (data) => {
             // Sync stats from server (online-only: maxHealth and other derived values come from gameState)
@@ -249,6 +253,11 @@ class NetworkManager {
         this.socket.emit('statAllocation', {
             statName: statName
         });
+    }
+
+    sendExitMatch() {
+        if (!this.connected || !this.playerId) return;
+        this.socket.emit('exitMatch');
     }
 
     sendPlayerDamage(targetId, damage, damageType = 'bullet') {
@@ -490,6 +499,21 @@ class NetworkManager {
         this.game.bullets = this.game.bullets.filter(b => !b.id || !ids.has(b.id));
     }
 
+    handleExitedMatch(data) {
+        this.game.economy.setBalance(data.newBalance);
+        this.game.economy.currentWager = 0;
+        this.game.updateBalanceDisplay();
+        let msg = `Exited match. Refunded: $${data.refund.toFixed(2)} (Fee: $${data.fee.toFixed(2)})`;
+        if (data.newLevel != null) {
+            msg += `. Level reduced to ${data.newLevel} - re-allocate stats when you rejoin.`;
+        }
+        this.game.showMessage(msg, GameConfig.UI.MESSAGE_DURATION_LONG);
+        this.cleanupGameState();
+        this.exitToMenu();
+        this.playerId = null;
+        this.roomStake = null;
+    }
+
     handleDisconnected(data) {
         // Note: This handler may not be called if socket is already disconnected
         // The socket 'disconnect' event handler below handles this case
@@ -559,6 +583,9 @@ class NetworkManager {
         // Exit game
         this.game.playerTank = null;
         this.game.state = 'menu';
+        
+        const exitBtn = document.getElementById('exitButton');
+        if (exitBtn) exitBtn.classList.add('hidden');
         
         // Show room selection
         this.game.showRoomSelection();

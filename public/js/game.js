@@ -147,6 +147,11 @@ class Game {
             });
         });
 
+        const exitBtn = document.getElementById('exitButton');
+        if (exitBtn) {
+            exitBtn.addEventListener('click', () => this.exitMatch());
+        }
+
         // Logout button
         const logoutBtn = document.getElementById('logoutButton');
         if (logoutBtn) {
@@ -348,6 +353,8 @@ class Game {
 
     hideRoomSelection() {
         document.getElementById('roomSelection').classList.add('hidden');
+        const exitBtn = document.getElementById('exitButton');
+        if (exitBtn) exitBtn.classList.remove('hidden');
         document.getElementById('minimap').classList.remove('hidden');
         this.state = 'playing';
     }
@@ -369,7 +376,7 @@ class Game {
         
         // Check if already in a match (allow rejoining if not connected)
         if (this.economy.isInMatch() && this.networkManager.isConnected() && this.networkManager.playerId) {
-            alert('You are already in a match! Stay until you die or disconnect to leave.');
+            alert('You are already in a match! Use Exit button to leave.');
             return;
         }
         
@@ -550,6 +557,12 @@ class Game {
             ctx.moveTo(screenStart.x, screenStart.y);
             ctx.lineTo(screenEnd.x, screenEnd.y);
             ctx.stroke();
+        }
+    }
+
+    exitMatch() {
+        if (this.state === 'playing' && this.playerTank) {
+            this.networkManager.sendExitMatch();
         }
     }
 

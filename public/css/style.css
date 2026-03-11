@@ -252,6 +252,30 @@ body {
     transform: scale(0.95);
 }
 
+#exitButton {
+    margin-top: 15px;
+    padding: 10px 20px;
+    background: #e24a4a;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: all 0.3s;
+    width: 100%;
+}
+
+#exitButton:hover {
+    background: #c0392b;
+    transform: scale(1.02);
+}
+
+#exitButton:active {
+    transform: scale(0.98);
+}
+
 #minimap {
     position: absolute;
     bottom: 20px;

@@ -6,8 +6,8 @@ const GameConfig = {
     // Economy Settings
     ECONOMY: {
         INITIAL_BALANCE: 100,
-        KILL_BUTTON_FEE_PERCENT: 0.1,      // 10% fee
-        KILL_BUTTON_REFUND_PERCENT: 0.9,   // 90% refund
+        EXIT_FEE_PERCENT: 0.1,             // 10% fee when exiting mid-match
+        EXIT_REFUND_PERCENT: 0.9,          // 90% refund when exiting mid-match
         KILL_REWARD_PERCENT: 0.9,          // 90% of victim's stake
         PLATFORM_FEE_PERCENT: 0.1,         // 10% platform fee
         DEFAULT_VICTIM_STAKE: 5,           // For testing (will be replaced with actual stake)

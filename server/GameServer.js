@@ -43,6 +43,10 @@ class GameServer {
                 await this.handleStatAllocation(socket, data);
             });
 
+            socket.on('exitMatch', async () => {
+                await this.handleExitMatch(socket);
+            });
+
             socket.on('disconnect', async () => {
                 await this.handleDisconnect(socket);
             });
@@ -532,6 +536,59 @@ class GameServer {
         console.log(`✅ Stat allocated: ${player.name} allocated ${statName} (${player.stats[statName]}/${GameConfig.TANK.MAX_STAT_POINTS}), ${player.statPoints} points remaining`);
     }
 
+    async handleExitMatch(socket) {
+        const player = this.playerManager.getPlayer(socket.id);
+        if (!player || !player.roomStake) {
+            console.warn(`Exit requested but player not in room: ${socket.id}`);
+            return;
+        }
+
+        const stake = player.roomStake;
+        const refundPercent = GameConfig.ECONOMY.EXIT_REFUND_PERCENT ?? 0.9;
+        const feePercent = GameConfig.ECONOMY.EXIT_FEE_PERCENT ?? 0.1;
+        const refund = stake * refundPercent;
+        const fee = stake * feePercent;
+
+        player.balance += refund;
+        player.balance = Math.max(0, player.balance);
+
+        this.playerManager.applyDeathPenalty(player);
+
+        if (player.userId) {
+            try {
+                await userRepository.updateBalance(player.userId, player.balance);
+                await userRepository.updateGameStats(player.userId, {
+                    level: player.level,
+                    xp: player.xp,
+                    xpToNextLevel: player.xpToNextLevel,
+                    stats: player.stats
+                });
+            } catch (err) {
+                console.error('DB update error on exit:', err);
+            }
+        }
+
+        this.removePlayerFromRoom(socket.id);
+
+        socket.emit('exitedMatch', {
+            refund,
+            fee,
+            newBalance: player.balance,
+            newLevel: player.level,
+            stats: player.stats,
+            statPoints: player.statPoints,
+            pendingStatAllocation: player.pendingStatAllocation
+        });
+
+        this.io.to(`room_${stake}`).emit('playerLeft', {
+            playerId: socket.id,
+            reason: 'exited'
+        });
+
+        this.broadcastRoomCounts();
+        console.log(`Exit processed: Refund $${refund.toFixed(2)}, Fee $${fee.toFixed(2)}`);
+    }
+
     async handleDisconnect(socket) {
         const player = this.playerManager.getPlayer(socket.id);
         if (!player) {
@@ -541,21 +598,25 @@ class GameServer {
 
         console.log(`Player disconnected: ${socket.id} (${player.name})`);
 
-        // Store room stake before removal
         const roomStake = player.roomStake;
 
-        // Disconnect: full refund (persist to DB)
         if (roomStake && player.userId) {
             player.balance += roomStake;
             player.balance = Math.max(0, player.balance);
+            this.playerManager.applyDeathPenalty(player);
             try {
                 await userRepository.updateBalance(player.userId, player.balance);
+                await userRepository.updateGameStats(player.userId, {
+                    level: player.level,
+                    xp: player.xp,
+                    xpToNextLevel: player.xpToNextLevel,
+                    stats: player.stats
+                });
             } catch (err) {
-                console.error('DB updateBalance error on disconnect:', err);
+                console.error('DB update error on disconnect:', err);
             }
         }
 
-        // Remove from room
         if (roomStake) {
             this.removePlayerFromRoom(socket.id);
 
